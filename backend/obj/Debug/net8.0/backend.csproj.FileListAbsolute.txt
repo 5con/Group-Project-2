@@ -1,0 +1,7 @@
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net8.0\backend.csproj.AssemblyReference.cache
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net8.0\backend.GeneratedMSBuildEditorConfig.editorconfig
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net8.0\backend.AssemblyInfoInputs.cache
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net8.0\backend.AssemblyInfo.cs
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net8.0\backend.csproj.CoreCompileInputs.cache
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net8.0\backend.MvcApplicationPartsAssemblyInfo.cs
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net8.0\backend.MvcApplicationPartsAssemblyInfo.cache

@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Financial Literacy Hub - Learn budgeting, debt management, and investing with interactive modules and personalized budget planning">
+    <meta name="keywords" content="financial literacy, budgeting, debt management, investing, money management, financial planning">
+    <title>Financial Literacy Hub - Budgeting & Financial Education</title>
+
+    <!-- Prevent favicon.ico requests -->
+    <link rel="icon" href="data:," />
+
+    <!-- Bootstrap 5 CSS -->
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+        crossorigin="anonymous"
+    />
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-piggy-bank me-2"></i>
+                Financial Literacy Hub
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#dashboard" id="nav-dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#budget" id="nav-budget">Budget</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#modules" id="nav-modules">Learning Modules</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="account.html">Account</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <button class="btn btn-outline-light btn-sm" onclick="logout()">
+                            <i class="bi bi-box-arrow-right me-1"></i>Logout
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Login Section -->
+    <section id="login-section" class="content-section">
+        <div class="row justify-content-center">
+            <div class="col-lg-6 col-md-8">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white text-center">
+                        <h2 class="card-title mb-0">
+                            <i class="bi bi-key me-2"></i>
+                            Welcome to Financial Literacy Hub
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info" role="alert">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Developer Access:</strong> Use password <code>123!</code> for testing
+                        </div>
+
+                        <form id="login-form">
+                            <div class="mb-3">
+                                <label for="login-email" class="form-label">Email Address</label>
+                                <input type="email" class="form-control" id="login-email" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="login-password" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="login-password" required>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+                                </button>
+                            </div>
+                        </form>
+
+                        <hr class="my-4">
+
+                        <div class="text-center">
+                            <button class="btn btn-outline-secondary" onclick="showDeveloperLogin()">
+                                <i class="bi bi-code-slash me-2"></i>Developer Login (Testing)
+                            </button>
+                        </div>
+
+                        <div id="developer-login-section" class="mt-3" style="display: none;">
+                            <div class="alert alert-warning" role="alert">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>Developer Mode:</strong> This bypasses normal authentication for testing purposes.
+                            </div>
+                            <form id="developer-login-form">
+                                <div class="mb-3">
+                                    <label for="dev-password" class="form-label">Developer Password</label>
+                                    <input type="password" class="form-control" id="dev-password" placeholder="Enter developer password">
+                                </div>
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-warning">
+                                        <i class="bi bi-bug me-2"></i>Login as Developer
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <main class="container my-4 d-none" id="main-content">
+        <!-- Onboarding Section -->
+        <section id="onboarding-section" class="content-section">
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h2 class="card-title mb-0">
+                                <i class="bi bi-person-plus me-2"></i>
+                                Welcome! Let's Get Started
+                            </h2>
+                        </div>
+                        <div class="card-body">
+                            <form id="onboarding-form">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="email" class="form-label">Email Address</label>
+                                        <input type="email" class="form-control" id="email" value="" readonly>
+                                        <div class="form-text">Signed in as: <span id="user-email-display"></span></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="state" class="form-label">State</label>
+                                        <select class="form-select" id="state" required>
+                                            <option value="">Select your state...</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="household-size" class="form-label">Household Size</label>
+                                        <select class="form-select" id="household-size" required>
+                                            <option value="">Select household size...</option>
+                                            <option value="1">1 person</option>
+                                            <option value="2">2 people</option>
+                                            <option value="3">3 people</option>
+                                            <option value="4">4 people</option>
+                                            <option value="5">5+ people</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <h4 class="mt-4 mb-3">Income Information</h4>
+                                <div id="income-container">
+                                    <div class="income-entry border rounded p-3 mb-3">
+                                        <div class="row">
+                                            <div class="col-md-4 mb-2">
+                                                <input type="text" class="form-control income-name" placeholder="Income Source" required>
+                                            </div>
+                                            <div class="col-md-3 mb-2">
+                                                <select class="form-select income-cadence">
+                                                    <option value="weekly">Weekly</option>
+                                                    <option value="biweekly">Bi-weekly</option>
+                                                    <option value="semimonthly">Semi-monthly</option>
+                                                    <option value="monthly" selected>Monthly</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4 mb-2">
+                                                <div class="input-group">
+                                                    <span class="input-group-text">$</span>
+                                                    <input type="number" class="form-control income-amount" placeholder="Amount" step="0.01" required>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-1 mb-2">
+                                                <button type="button" class="btn btn-outline-danger remove-income">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-outline-primary mb-3" id="add-income">
+                                    <i class="bi bi-plus-circle me-2"></i>Add Income Source
+                                </button>
+
+                                <h4 class="mt-4 mb-3">Current Debts (Optional)</h4>
+                                <div id="debt-container">
+                                    <!-- Debt entries will be added here -->
+                                </div>
+                                <button type="button" class="btn btn-outline-secondary mb-3" id="add-debt">
+                                    <i class="bi bi-plus-circle me-2"></i>Add Debt
+                                </button>
+
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary btn-lg">
+                                        <i class="bi bi-check-circle me-2"></i>Create My Financial Plan
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard Section -->
+        <section id="dashboard-section" class="content-section d-none">
+            <div class="row">
+                <div class="col-12">
+                    <h2 class="mb-4">
+                        <i class="bi bi-speedometer2 me-2"></i>
+                        Financial Dashboard
+                    </h2>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Monthly Income</h5>
+                            <h3 id="total-income" class="mb-0">$0.00</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Budgeted</h5>
+                            <h3 id="total-budgeted" class="mb-0">$0.00</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Remaining</h5>
+                            <h3 id="remaining-budget" class="mb-0">$0.00</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Debt Freedom</h5>
+                            <h3 id="debt-freedom-date" class="mb-0">-</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Quick Actions</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3 mb-2">
+                                    <button class="btn btn-outline-primary w-100" onclick="showBudgetSection()">
+                                        <i class="bi bi-calculator me-2"></i>Create/Edit Budget
+                                    </button>
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <button class="btn btn-outline-success w-100" onclick="showModulesSection()">
+                                        <i class="bi bi-book me-2"></i>Learning Modules
+                                    </button>
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <button class="btn btn-outline-info w-100" onclick="addTransaction()">
+                                        <i class="bi bi-plus-circle me-2"></i>Add Transaction
+                                    </button>
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <button class="btn btn-outline-warning w-100" onclick="viewReports()">
+                                        <i class="bi bi-bar-chart me-2"></i>View Reports
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Budget Overview -->
+            <div class="row mb-4">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Budget Overview</h5>
+                            <div class="btn-group btn-group-sm">
+                                <input type="radio" class="btn-check" name="chart-type" id="chart-doughnut" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary" for="chart-doughnut">Doughnut</label>
+                                <input type="radio" class="btn-check" name="chart-type" id="chart-bar" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="chart-bar">Bar</label>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="budget-chart" width="400" height="250"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Budget Progress</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="budget-progress">
+                                <div class="progress-item mb-3">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span>Needs (50%)</span>
+                                        <span id="needs-percentage">0%</span>
+                                    </div>
+                                    <div class="progress">
+                                        <div class="progress-bar bg-primary" id="needs-progress" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <div class="progress-item mb-3">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span>Wants (30%)</span>
+                                        <span id="wants-percentage">0%</span>
+                                    </div>
+                                    <div class="progress">
+                                        <div class="progress-bar bg-warning" id="wants-progress" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <div class="progress-item mb-3">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span>Savings/Debt (20%)</span>
+                                        <span id="savings-percentage">0%</span>
+                                    </div>
+                                    <div class="progress">
+                                        <div class="progress-bar bg-success" id="savings-progress" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monthly Trends & 12-Month Projection -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Monthly Trends</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="trends-chart" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">12-Month Projection</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="projection-summary">
+                                <div class="row text-center">
+                                    <div class="col-6">
+                                        <div class="projection-item">
+                                            <h4 class="text-success mb-1" id="projected-savings">$0</h4>
+                                            <small class="text-muted">Projected Savings</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="projection-item">
+                                            <h4 class="text-info mb-1" id="debt-freedom-months">0</h4>
+                                            <small class="text-muted">Months to Debt Freedom</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div class="projection-details" id="projection-details">
+                                    <p class="text-muted mb-2">Monthly breakdown:</p>
+                                    <div id="monthly-projection">
+                                        <!-- Monthly projection items will be added here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Category Breakdown -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Category Breakdown</h5>
+                            <button class="btn btn-sm btn-outline-primary" onclick="toggleCategoryView()">
+                                <i class="bi bi-grid me-1"></i>Toggle View
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="category-grid" class="row">
+                                <!-- Category cards will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debt Progress -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Debt Payoff Progress</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="debt-progress">
+                                <div class="text-center">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2">Loading debt information...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Goals & Milestones -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Emergency Fund Progress</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="emergency-fund-progress">
+                                <div class="text-center">
+                                    <h3 class="text-success">$0 / $0</h3>
+                                    <div class="progress mb-3">
+                                        <div class="progress-bar bg-success" style="width: 0%"></div>
+                                    </div>
+                                    <p class="text-muted">Target: 3-6 months of expenses</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Financial Milestones</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="milestones">
+                                <div class="milestone-item d-flex align-items-center mb-3">
+                                    <div class="milestone-icon me-3">
+                                        <i class="bi bi-piggy-bank text-success"></i>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-0">$1,000 Emergency Fund</h6>
+                                        <small class="text-muted">First milestone</small>
+                                    </div>
+                                    <div class="milestone-status">
+                                        <span class="badge bg-secondary">Not Started</span>
+                                    </div>
+                                </div>
+                                <div class="milestone-item d-flex align-items-center mb-3">
+                                    <div class="milestone-icon me-3">
+                                        <i class="bi bi-graph-up text-primary"></i>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-0">3-Month Emergency Fund</h6>
+                                        <small class="text-muted">Basic security</small>
+                                    </div>
+                                    <div class="milestone-status">
+                                        <span class="badge bg-secondary">Not Started</span>
+                                    </div>
+                                </div>
+                                <div class="milestone-item d-flex align-items-center">
+                                    <div class="milestone-icon me-3">
+                                        <i class="bi bi-check-circle text-warning"></i>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-0">6-Month Emergency Fund</h6>
+                                        <small class="text-muted">Full security</small>
+                                    </div>
+                                    <div class="milestone-status">
+                                        <span class="badge bg-secondary">Not Started</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Budget Section -->
+        <section id="budget-section" class="content-section d-none">
+            <div class="row">
+                <div class="col-12">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h2>
+                            <i class="bi bi-wallet2 me-2"></i>
+                            Budget Planner
+                        </h2>
+                        <button class="btn btn-outline-secondary" onclick="showDashboard()">
+                            <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Budget Method Selection -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Choose Your Budget Method</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="budget-method" id="method-503020" value="50/30/20" checked>
+                                        <label class="form-check-label" for="method-503020">
+                                            <strong>50/30/20 Rule</strong><br>
+                                            <small class="text-muted">50% needs, 30% wants, 20% savings/debt</small>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="budget-method" id="method-zero" value="zero_based">
+                                        <label class="form-check-label" for="method-zero">
+                                            <strong>Zero-Based Budget</strong><br>
+                                            <small class="text-muted">Every dollar has a purpose</small>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="budget-method" id="method-envelope" value="envelope">
+                                        <label class="form-check-label" for="method-envelope">
+                                            <strong>Envelope System</strong><br>
+                                            <small class="text-muted">Cash-based category limits</small>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <button class="btn btn-primary" id="generate-budget">
+                                    <i class="bi bi-magic me-2"></i>Generate Budget
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Budget Categories -->
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Budget Categories</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="budget-categories">
+                                <div class="text-center">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2">Select a budget method and click "Generate Budget" to see categories</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Learning Modules Section -->
+        <section id="modules-section" class="content-section d-none">
+            <div class="row">
+                <div class="col-12">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h2>
+                            <i class="bi bi-mortarboard me-2"></i>
+                            Financial Learning Modules
+                        </h2>
+                        <button class="btn btn-outline-secondary" onclick="showDashboard()">
+                            <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row" id="modules-container">
+                <!-- Modules will be loaded here -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-light py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-muted">Financial Literacy Hub</h6>
+                    <p class="text-muted mb-0">Empowering you with the knowledge and tools to achieve financial freedom.</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <small class="text-muted">
+                        Built with <i class="bi bi-heart text-danger"></i> for financial education
+                    </small>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"
+    ></script>
+
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Custom JavaScript -->
+    <script src="./scripts/auth.js"></script>
+    <script src="./scripts/ui.js"></script>
+    <script src="./scripts/api.js"></script>
+    <script src="./scripts/app.js"></script>
+    <script src="./scripts/main.js"></script>
+</body>
+</html>
