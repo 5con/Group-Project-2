@@ -69,3 +69,4 @@ E:\School\MIS-321\Group-Project-2\backend\bin\Debug\net9.0\Microsoft.IdentityMod
 E:\School\MIS-321\Group-Project-2\backend\bin\Debug\net9.0\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
 E:\School\MIS-321\Group-Project-2\backend\bin\Debug\net9.0\Microsoft.IdentityModel.Tokens.dll
 E:\School\MIS-321\Group-Project-2\backend\bin\Debug\net9.0\System.IdentityModel.Tokens.Jwt.dll
+E:\School\MIS-321\Group-Project-2\backend\obj\Debug\net9.0\backend.sourcelink.json

@@ -166,11 +166,14 @@ public class OnboardingController : ControllerBase
 
         await _context.SaveChangesAsync();
 
+        // Automatically generate initial budget for the user
+        await GenerateInitialBudget(household);
+
         return Ok(new
         {
             UserId = user.Id,
             HouseholdId = household.Id,
-            Message = "Household created successfully"
+            Message = "Household created successfully with initial budget generated"
         });
     }
 
@@ -212,5 +215,216 @@ public class OnboardingController : ControllerBase
         }
 
         return Ok(household);
+    }
+
+    private async Task GenerateInitialBudget(Household household)
+    {
+        try
+        {
+            // Get state parameters for tax and COLA calculations
+            var stateParam = await _context.StateParams
+                .FirstOrDefaultAsync(sp => sp.State == household.State);
+
+            if (stateParam == null)
+            {
+                Console.WriteLine($"Warning: State parameters not found for {household.State}, skipping budget generation");
+                return;
+            }
+
+            // Calculate total monthly income
+            var totalMonthlyIncome = household.Incomes
+                .Select(income => ConvertToMonthlyAmount(income.GrossAmount, income.Cadence))
+                .Sum();
+
+            if (totalMonthlyIncome <= 0)
+            {
+                Console.WriteLine($"Warning: No income found for household {household.Id}, skipping budget generation");
+                return;
+            }
+
+            // Calculate estimated net income (after simple tax)
+            var estimatedTax = totalMonthlyIncome * stateParam.EstEffectiveTaxRate;
+            var netIncome = totalMonthlyIncome - estimatedTax;
+
+            // Generate budget using 50/30/20 methodology
+            var budgetItems = Generate503020Budget(netIncome, household, stateParam);
+            var budgetDate = DateTime.UtcNow;
+
+            // Create budget record
+            var budget = new Budget
+            {
+                HouseholdId = household.Id,
+                Methodology = "50/30/20",
+                Month = new DateTime(budgetDate.Year, budgetDate.Month, 1),
+                Notes = "Auto-generated initial budget"
+            };
+
+            _context.Budgets.Add(budget);
+            await _context.SaveChangesAsync();
+
+            // Add budget items
+            foreach (var item in budgetItems)
+            {
+                item.BudgetId = budget.Id;
+            }
+
+            _context.BudgetItems.AddRange(budgetItems);
+            await _context.SaveChangesAsync();
+
+            // Generate debt snowball projection if debts exist
+            if (household.Debts.Any())
+            {
+                var snowballProjection = GenerateDebtSnowballProjection(household, netIncome);
+                Console.WriteLine($"Debt snowball projection generated for household {household.Id}");
+            }
+
+            Console.WriteLine($"Initial budget generated successfully for household {household.Id}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating initial budget for household {household.Id}: {ex.Message}");
+            // Don't throw - we don't want to fail onboarding due to budget generation issues
+        }
+    }
+
+    private List<BudgetItem> Generate503020Budget(decimal netIncome, Household household, StateParam stateParam)
+    {
+        var categories = _context.Categories.ToList();
+        var items = new List<BudgetItem>();
+
+        // 50% Needs
+        var needsAmount = netIncome * 0.5m;
+        var needsCategories = categories.Where(c => c.IsNeed).ToList();
+
+        // Distribute needs proportionally based on typical percentages
+        var needsDistribution = new Dictionary<string, decimal>
+        {
+            { "Housing", 0.60m }, // 60% of needs
+            { "Groceries", 0.20m }, // 20% of needs
+            { "Transportation", 0.10m }, // 10% of needs
+            { "Utilities", 0.05m }, // 5% of needs
+            { "Insurance", 0.05m } // 5% of needs
+        };
+
+        foreach (var category in needsCategories)
+        {
+            if (needsDistribution.TryGetValue(category.Name, out var percentage))
+            {
+                var amount = needsAmount * percentage;
+                items.Add(new BudgetItem
+                {
+                    CategoryId = category.Id,
+                    PlannedAmount = amount
+                });
+            }
+        }
+
+        // 30% Wants
+        var wantsAmount = netIncome * 0.3m;
+        var wantsCategories = categories.Where(c => !c.IsNeed).ToList();
+        var wantsPerCategory = wantsAmount / Math.Max(wantsCategories.Count, 1);
+
+        foreach (var category in wantsCategories.Take(5)) // Limit to first 5 wants categories
+        {
+            items.Add(new BudgetItem
+            {
+                CategoryId = category.Id,
+                PlannedAmount = wantsPerCategory
+            });
+        }
+
+        // 20% Savings/Debt
+        var savingsAmount = netIncome * 0.2m;
+        var debtCategories = categories.Where(c => c.Name.Contains("Debt") || c.Name.Contains("Emergency") || c.Name.Contains("Retirement")).ToList();
+        var savingsPerCategory = savingsAmount / Math.Max(debtCategories.Count, 1);
+
+        foreach (var category in debtCategories)
+        {
+            items.Add(new BudgetItem
+            {
+                CategoryId = category.Id,
+                PlannedAmount = savingsPerCategory
+            });
+        }
+
+        return items;
+    }
+
+    private object GenerateDebtSnowballProjection(Household household, decimal monthlySurplus)
+    {
+        var debts = household.Debts.OrderBy(d => d.Balance).ToList();
+        var projection = new List<object>();
+        var currentSurplus = monthlySurplus;
+
+        // Calculate minimum payments first
+        var totalMinPayments = debts.Sum(d => d.MinPayment);
+        currentSurplus -= totalMinPayments;
+
+        var month = 0;
+        var remainingDebts = debts.ToList();
+
+        while (remainingDebts.Any() && month < 120) // Max 10 years
+        {
+            month++;
+            var monthData = new Dictionary<string, object>();
+            var totalPaid = 0m;
+
+            foreach (var debt in remainingDebts.ToList())
+            {
+                var payment = debt.MinPayment;
+                if (debt == remainingDebts.First() && currentSurplus > 0)
+                {
+                    // Apply surplus to smallest debt (snowball method)
+                    payment += currentSurplus;
+                    currentSurplus = 0;
+                }
+
+                payment = Math.Min(payment, debt.Balance);
+
+                if (payment > 0)
+                {
+                    debt.Balance -= payment;
+                    totalPaid += payment;
+
+                    if (debt.Balance <= 0)
+                    {
+                        remainingDebts.Remove(debt);
+                        if (remainingDebts.Any())
+                        {
+                            // Move surplus to next debt
+                            currentSurplus += debt.MinPayment;
+                        }
+                    }
+                }
+            }
+
+            monthData["Month"] = month;
+            monthData["DebtsRemaining"] = remainingDebts.Count;
+            monthData["TotalPaid"] = totalPaid;
+            monthData["RemainingBalance"] = remainingDebts.Sum(d => d.Balance);
+
+            projection.Add(monthData);
+
+            if (!remainingDebts.Any()) break;
+        }
+
+        return new
+        {
+            Projection = projection,
+            TotalMonths = month,
+            TotalInterest = 0m // Would need more complex calculation for actual interest
+        };
+    }
+
+    private decimal ConvertToMonthlyAmount(decimal amount, string cadence)
+    {
+        return cadence.ToLower() switch
+        {
+            "weekly" => amount * 4.33m,
+            "biweekly" => amount * 2.17m,
+            "semimonthly" => amount * 2,
+            "monthly" => amount,
+            _ => amount
+        };
     }
 }

@@ -160,6 +160,34 @@ class UIManager {
         this.showAlert(message, 'danger');
     }
 
+    showLoading(message = 'Loading...') {
+        // Remove existing loading overlay if present
+        this.hideLoading();
+
+        // Create loading overlay
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.id = 'loading-overlay';
+        loadingOverlay.className = 'd-flex justify-content-center align-items-center position-fixed w-100 h-100 bg-dark bg-opacity-50';
+        loadingOverlay.style.zIndex = '9999';
+        loadingOverlay.innerHTML = `
+            <div class="bg-white p-4 rounded shadow text-center">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="text-muted">${message}</div>
+            </div>
+        `;
+
+        document.body.appendChild(loadingOverlay);
+    }
+
+    hideLoading() {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.remove();
+        }
+    }
+
     setupNavigation() {
         // Navigation link handlers
         const navDashboard = document.getElementById('nav-dashboard');

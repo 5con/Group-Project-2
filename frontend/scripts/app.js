@@ -4,6 +4,7 @@ class FinancialApp {
     constructor() {
         this.currentHouseholdId = null;
         this.currentBudget = null;
+        this.householdData = null;
         this.states = [];
         this.categories = [];
         this.budgetChart = null;
@@ -20,17 +21,27 @@ class FinancialApp {
                 throw new Error('Required managers not initialized. Check console for module loading errors.');
             }
 
-            // Always show login screen first for initial page load
-            // This ensures users see the login screen when they first visit
-            console.log('Showing login screen initially');
-            uiManager.showLogin();
+            // Load reference data first before showing any UI
+            console.log('Loading reference data before showing UI...');
+            uiManager.showLoading('Loading application data...');
+            await this.loadReferenceData();
+            uiManager.hideLoading();
 
-            // Always require fresh login - don't check stored authentication
-            console.log('Fresh login required for all users');
+            // Check if user is already authenticated
+            if (authManager.isAuthenticated && authManager.getCurrentUser()) {
+                console.log('User already authenticated, checking user status');
+                // User is already authenticated, check if they're first-time or existing
+                await this.checkFirstTimeUser();
+            } else {
+                // Show login screen for unauthenticated users
+                console.log('Showing login screen for unauthenticated user');
+            uiManager.showLogin();
+            }
 
             console.log('App initialization completed successfully');
         } catch (error) {
             console.error('CRITICAL ERROR during app initialization:', error);
+            uiManager.hideLoading();
             uiManager.showErrorAlert('Failed to initialize application: ' + error.message);
         }
     }
@@ -50,8 +61,12 @@ class FinancialApp {
             // For developers, always show onboarding (every time)
             if (isDeveloper) {
                 console.log('Developer mode detected, showing onboarding');
+                // Ensure reference data is loaded before showing onboarding
+                if (this.states.length === 0 || this.categories.length === 0) {
+                    console.log('Reference data not loaded yet, loading now...');
+                    await this.loadReferenceData();
+                }
                 uiManager.showSection('onboarding');
-                await this.loadReferenceData();
                 return;
             }
 
@@ -62,9 +77,12 @@ class FinancialApp {
             if (userStatus.isFirstTime) {
                 console.log('First-time user detected, showing onboarding');
                 // First-time user, show onboarding
+                // Ensure reference data is loaded before showing onboarding
+                if (this.states.length === 0 || this.categories.length === 0) {
+                    console.log('Reference data not loaded yet, loading now...');
+                    await this.loadReferenceData();
+                }
                 uiManager.showSection('onboarding');
-                // Load reference data for onboarding form
-                await this.loadReferenceData();
             } else {
                 console.log('Existing user detected, showing dashboard');
                 // User has completed onboarding, show dashboard
@@ -81,15 +99,12 @@ class FinancialApp {
             });
 
             // Default to onboarding on error and load reference data
-            uiManager.showSection('onboarding');
-
-            // Always try to load reference data for the onboarding form
-            try {
+            // Ensure reference data is loaded before showing onboarding
+            if (this.states.length === 0 || this.categories.length === 0) {
+                console.log('Reference data not loaded yet, loading now...');
                 await this.loadReferenceData();
-            } catch (refError) {
-                console.error('ERROR loading reference data after user check failed:', refError);
-                uiManager.showErrorAlert('Error loading form data. Please try refreshing the page.');
             }
+            uiManager.showSection('onboarding');
 
             if (error.message.includes('network') || error.message.includes('fetch')) {
                 uiManager.showErrorAlert('Network error. Please check if the server is running and try again.');
@@ -160,56 +175,56 @@ class FinancialApp {
 
     getFallbackStates() {
         return [
-            { state: 'AL', colaIndex: 0.87, estEffectiveTaxRate: 0.18 },
-            { state: 'AK', colaIndex: 1.27, estEffectiveTaxRate: 0.15 },
-            { state: 'AZ', colaIndex: 0.95, estEffectiveTaxRate: 0.16 },
-            { state: 'AR', colaIndex: 0.85, estEffectiveTaxRate: 0.19 },
-            { state: 'CA', colaIndex: 1.35, estEffectiveTaxRate: 0.22 },
-            { state: 'CO', colaIndex: 1.05, estEffectiveTaxRate: 0.17 },
-            { state: 'CT', colaIndex: 1.15, estEffectiveTaxRate: 0.20 },
-            { state: 'DE', colaIndex: 0.98, estEffectiveTaxRate: 0.18 },
-            { state: 'FL', colaIndex: 0.97, estEffectiveTaxRate: 0.15 },
-            { state: 'GA', colaIndex: 0.91, estEffectiveTaxRate: 0.18 },
-            { state: 'HI', colaIndex: 1.60, estEffectiveTaxRate: 0.21 },
-            { state: 'ID', colaIndex: 0.93, estEffectiveTaxRate: 0.17 },
-            { state: 'IL', colaIndex: 0.95, estEffectiveTaxRate: 0.19 },
-            { state: 'IN', colaIndex: 0.88, estEffectiveTaxRate: 0.17 },
-            { state: 'IA', colaIndex: 0.89, estEffectiveTaxRate: 0.18 },
-            { state: 'KS', colaIndex: 0.87, estEffectiveTaxRate: 0.17 },
-            { state: 'KY', colaIndex: 0.88, estEffectiveTaxRate: 0.18 },
-            { state: 'LA', colaIndex: 0.92, estEffectiveTaxRate: 0.17 },
-            { state: 'ME', colaIndex: 0.96, estEffectiveTaxRate: 0.18 },
-            { state: 'MD', colaIndex: 1.10, estEffectiveTaxRate: 0.21 },
-            { state: 'MA', colaIndex: 1.25, estEffectiveTaxRate: 0.19 },
-            { state: 'MI', colaIndex: 0.91, estEffectiveTaxRate: 0.17 },
-            { state: 'MN', colaIndex: 1.02, estEffectiveTaxRate: 0.20 },
-            { state: 'MS', colaIndex: 0.82, estEffectiveTaxRate: 0.17 },
-            { state: 'MO', colaIndex: 0.88, estEffectiveTaxRate: 0.16 },
-            { state: 'MT', colaIndex: 0.96, estEffectiveTaxRate: 0.17 },
-            { state: 'NE', colaIndex: 0.90, estEffectiveTaxRate: 0.18 },
-            { state: 'NV', colaIndex: 0.98, estEffectiveTaxRate: 0.15 },
-            { state: 'NH', colaIndex: 1.05, estEffectiveTaxRate: 0.15 },
-            { state: 'NJ', colaIndex: 1.18, estEffectiveTaxRate: 0.20 },
-            { state: 'NM', colaIndex: 0.88, estEffectiveTaxRate: 0.16 },
-            { state: 'NY', colaIndex: 1.25, estEffectiveTaxRate: 0.22 },
-            { state: 'NC', colaIndex: 0.90, estEffectiveTaxRate: 0.18 },
-            { state: 'ND', colaIndex: 0.94, estEffectiveTaxRate: 0.15 },
-            { state: 'OH', colaIndex: 0.89, estEffectiveTaxRate: 0.17 },
-            { state: 'OK', colaIndex: 0.86, estEffectiveTaxRate: 0.17 },
-            { state: 'OR', colaIndex: 1.08, estEffectiveTaxRate: 0.21 },
-            { state: 'PA', colaIndex: 0.98, estEffectiveTaxRate: 0.18 },
-            { state: 'RI', colaIndex: 1.05, estEffectiveTaxRate: 0.18 },
-            { state: 'SC', colaIndex: 0.89, estEffectiveTaxRate: 0.17 },
-            { state: 'SD', colaIndex: 0.91, estEffectiveTaxRate: 0.15 },
-            { state: 'TN', colaIndex: 0.90, estEffectiveTaxRate: 0.15 },
-            { state: 'TX', colaIndex: 0.92, estEffectiveTaxRate: 0.15 },
-            { state: 'UT', colaIndex: 0.95, estEffectiveTaxRate: 0.18 },
-            { state: 'VT', colaIndex: 1.05, estEffectiveTaxRate: 0.18 },
-            { state: 'VA', colaIndex: 1.00, estEffectiveTaxRate: 0.18 },
-            { state: 'WA', colaIndex: 1.10, estEffectiveTaxRate: 0.19 },
-            { state: 'WV', colaIndex: 0.83, estEffectiveTaxRate: 0.17 },
-            { state: 'WI', colaIndex: 0.94, estEffectiveTaxRate: 0.18 },
-            { state: 'WY', colaIndex: 0.95, estEffectiveTaxRate: 0.15 }
+            { State: 'AL', ColaIndex: 0.87, EstEffectiveTaxRate: 0.18 },
+            { State: 'AK', ColaIndex: 1.27, EstEffectiveTaxRate: 0.15 },
+            { State: 'AZ', ColaIndex: 0.95, EstEffectiveTaxRate: 0.16 },
+            { State: 'AR', ColaIndex: 0.85, EstEffectiveTaxRate: 0.19 },
+            { State: 'CA', ColaIndex: 1.35, EstEffectiveTaxRate: 0.22 },
+            { State: 'CO', ColaIndex: 1.05, EstEffectiveTaxRate: 0.17 },
+            { State: 'CT', ColaIndex: 1.15, EstEffectiveTaxRate: 0.20 },
+            { State: 'DE', ColaIndex: 0.98, EstEffectiveTaxRate: 0.18 },
+            { State: 'FL', ColaIndex: 0.97, EstEffectiveTaxRate: 0.15 },
+            { State: 'GA', ColaIndex: 0.91, EstEffectiveTaxRate: 0.18 },
+            { State: 'HI', ColaIndex: 1.60, EstEffectiveTaxRate: 0.21 },
+            { State: 'ID', ColaIndex: 0.93, EstEffectiveTaxRate: 0.17 },
+            { State: 'IL', ColaIndex: 0.95, EstEffectiveTaxRate: 0.19 },
+            { State: 'IN', ColaIndex: 0.88, EstEffectiveTaxRate: 0.17 },
+            { State: 'IA', ColaIndex: 0.89, EstEffectiveTaxRate: 0.18 },
+            { State: 'KS', ColaIndex: 0.87, EstEffectiveTaxRate: 0.17 },
+            { State: 'KY', ColaIndex: 0.88, EstEffectiveTaxRate: 0.18 },
+            { State: 'LA', ColaIndex: 0.92, EstEffectiveTaxRate: 0.17 },
+            { State: 'ME', ColaIndex: 0.96, EstEffectiveTaxRate: 0.18 },
+            { State: 'MD', ColaIndex: 1.10, EstEffectiveTaxRate: 0.21 },
+            { State: 'MA', ColaIndex: 1.25, EstEffectiveTaxRate: 0.19 },
+            { State: 'MI', ColaIndex: 0.91, EstEffectiveTaxRate: 0.17 },
+            { State: 'MN', ColaIndex: 1.02, EstEffectiveTaxRate: 0.20 },
+            { State: 'MS', ColaIndex: 0.82, EstEffectiveTaxRate: 0.17 },
+            { State: 'MO', ColaIndex: 0.88, EstEffectiveTaxRate: 0.16 },
+            { State: 'MT', ColaIndex: 0.96, EstEffectiveTaxRate: 0.17 },
+            { State: 'NE', ColaIndex: 0.90, EstEffectiveTaxRate: 0.18 },
+            { State: 'NV', ColaIndex: 0.98, EstEffectiveTaxRate: 0.15 },
+            { State: 'NH', ColaIndex: 1.05, EstEffectiveTaxRate: 0.15 },
+            { State: 'NJ', ColaIndex: 1.18, EstEffectiveTaxRate: 0.20 },
+            { State: 'NM', ColaIndex: 0.88, EstEffectiveTaxRate: 0.16 },
+            { State: 'NY', ColaIndex: 1.25, EstEffectiveTaxRate: 0.22 },
+            { State: 'NC', ColaIndex: 0.90, EstEffectiveTaxRate: 0.18 },
+            { State: 'ND', ColaIndex: 0.94, EstEffectiveTaxRate: 0.15 },
+            { State: 'OH', ColaIndex: 0.89, EstEffectiveTaxRate: 0.17 },
+            { State: 'OK', ColaIndex: 0.86, EstEffectiveTaxRate: 0.17 },
+            { State: 'OR', ColaIndex: 1.08, EstEffectiveTaxRate: 0.21 },
+            { State: 'PA', ColaIndex: 0.98, EstEffectiveTaxRate: 0.18 },
+            { State: 'RI', ColaIndex: 1.05, EstEffectiveTaxRate: 0.18 },
+            { State: 'SC', ColaIndex: 0.89, EstEffectiveTaxRate: 0.17 },
+            { State: 'SD', ColaIndex: 0.91, EstEffectiveTaxRate: 0.15 },
+            { State: 'TN', ColaIndex: 0.90, EstEffectiveTaxRate: 0.15 },
+            { State: 'TX', ColaIndex: 0.92, EstEffectiveTaxRate: 0.15 },
+            { State: 'UT', ColaIndex: 0.95, EstEffectiveTaxRate: 0.18 },
+            { State: 'VT', ColaIndex: 1.05, EstEffectiveTaxRate: 0.18 },
+            { State: 'VA', ColaIndex: 1.00, EstEffectiveTaxRate: 0.18 },
+            { State: 'WA', ColaIndex: 1.10, EstEffectiveTaxRate: 0.19 },
+            { State: 'WV', ColaIndex: 0.83, EstEffectiveTaxRate: 0.17 },
+            { State: 'WI', ColaIndex: 0.94, EstEffectiveTaxRate: 0.18 },
+            { State: 'WY', ColaIndex: 0.95, EstEffectiveTaxRate: 0.15 }
         ];
     }
 
@@ -261,11 +276,17 @@ class FinancialApp {
         console.log(`Populating state dropdown with ${this.states.length} states`);
         this.states.forEach((state, index) => {
             console.log(`Adding state ${index}:`, state);
-            if (state && state.State) {
-            const option = document.createElement('option');
-            option.value = state.State;
-            option.textContent = state.State;
-            stateSelect.appendChild(option);
+            if (state) {
+                // Handle both 'State' (from API) and 'state' (from fallback) property names
+                const stateCode = state.State || state.state;
+                const stateName = state.StateName || state.State || state.state || stateCode;
+
+                if (stateCode) {
+                    const option = document.createElement('option');
+                    option.value = stateCode;
+                    option.textContent = stateName;
+                    stateSelect.appendChild(option);
+                }
             }
         });
 
@@ -329,10 +350,15 @@ class FinancialApp {
             this.currentHouseholdId = response.householdId;
             console.log('Household ID set:', this.currentHouseholdId);
 
-            // Show success message and redirect to dashboard
-            uiManager.showSuccessAlert('Welcome! Your financial profile has been created.');
+            // Set authentication state to keep user logged in
+            authManager.isAuthenticated = true;
+            authManager.currentUser = { email: formData.email, userId: response.userId };
+            console.log('User authentication state maintained after onboarding');
+
+            // Show success message and redirect to dashboard page
+            uiManager.showSuccessAlert('Welcome! Your financial profile has been created and your initial budget has been generated.');
             setTimeout(() => {
-                this.showDashboard();
+                window.location.href = 'dashboard.html';
             }, 2000);
         } catch (error) {
             console.error('ERROR submitting onboarding:', error);
@@ -409,6 +435,73 @@ class FinancialApp {
         }
     }
 
+    async loadBudgetAndShowDashboard() {
+        console.log('Loading budget data and showing dashboard');
+        uiManager.showSection('dashboard');
+
+        if (!this.currentHouseholdId) {
+            console.error('No household ID available');
+            uiManager.showErrorAlert('Error: No household found. Please try logging in again.');
+            return;
+        }
+
+        try {
+            // Load household data first
+            this.householdData = await apiManager.loadHouseholdData(this.currentHouseholdId);
+            console.log('Household data loaded:', this.householdData);
+
+            // Load the latest budget for this household
+            const currentDate = new Date();
+            const budgetData = await apiManager.loadBudgetData(this.currentHouseholdId, `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`);
+
+            if (budgetData && budgetData.length > 0) {
+                const latestBudget = budgetData[0]; // Get the most recent budget
+                this.currentBudget = latestBudget;
+
+                console.log('Budget data loaded:', latestBudget);
+
+                // Update dashboard with budget data
+                this.updateDashboardWithBudget(latestBudget);
+
+                // Show success message about budget generation
+                uiManager.showSuccessAlert('Your personalized budget has been generated! Review and customize it using the budget builder.');
+            } else {
+                console.warn('No budget data found, generating new budget...');
+                await this.generateNewBudget();
+            }
+        } catch (error) {
+            console.error('Error loading budget data:', error);
+            uiManager.showErrorAlert('Error loading your budget. Please try refreshing the page.');
+        }
+    }
+
+    async generateNewBudget() {
+        try {
+            console.log('Generating new budget for household:', this.currentHouseholdId);
+
+            const currentDate = new Date();
+            const budgetRequest = {
+                householdId: this.currentHouseholdId,
+                methodology: "50/30/20",
+                month: currentDate.getMonth() + 1,
+                year: currentDate.getFullYear()
+            };
+
+            const budgetResponse = await apiManager.createBudget(budgetRequest);
+
+            if (budgetResponse && budgetResponse.budget) {
+                this.currentBudget = budgetResponse;
+                console.log('New budget generated:', budgetResponse);
+
+                this.updateDashboardWithBudget(budgetResponse);
+                uiManager.showSuccessAlert('Your personalized budget has been generated!');
+            }
+        } catch (error) {
+            console.error('Error generating budget:', error);
+            uiManager.showErrorAlert('Error generating your budget. Please try again.');
+        }
+    }
+
     showBudgetSection() {
         console.log('Showing budget section');
         uiManager.showSection('budget');
@@ -423,109 +516,308 @@ class FinancialApp {
         }
     }
 
-    // Transaction and Reporting Methods
+    // Transaction and Reporting Methods - Now handled by dashboardManager
     addTransaction() {
+        if (dashboardManager) {
         uiManager.showSection('transactions');
         // Focus on the transaction form if it exists
         const transactionForm = document.getElementById('transactionForm');
         if (transactionForm) {
             transactionForm.scrollIntoView({ behavior: 'smooth' });
+            }
+        } else {
+            console.error('Dashboard manager not initialized');
         }
     }
 
     viewReports() {
+        if (dashboardManager) {
         uiManager.showSection('reports');
         // Generate and display reports
-        this.generateReports();
+            dashboardManager.generateReports();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
     }
 
     toggleCategoryView() {
-        const budgetSection = document.getElementById('budget');
-        if (budgetSection) {
-            const categoryView = budgetSection.querySelector('.category-view');
-            const listView = budgetSection.querySelector('.list-view');
-
-            if (categoryView && listView) {
-                // Toggle between category and list view
-                if (categoryView.style.display === 'none') {
-                    categoryView.style.display = 'block';
-                    listView.style.display = 'none';
+        if (dashboardManager) {
+            dashboardManager.toggleCategoryView();
                 } else {
-                    categoryView.style.display = 'none';
-                    listView.style.display = 'block';
-                }
-            }
+            console.error('Dashboard manager not initialized');
         }
     }
 
     generateReports() {
-        // Generate financial reports and visualizations
-        if (this.currentHouseholdId) {
-            this.loadMonthlyTrends();
-            this.updateBudgetChart();
-            // Additional report generation logic can be added here
+        if (dashboardManager) {
+            dashboardManager.generateReports();
+        } else {
+            console.error('Dashboard manager not initialized');
         }
     }
 
-    // Data Loading Methods
+    // Data Loading Methods - Now handled by dashboardManager
     async loadDashboardData() {
-        if (!this.currentHouseholdId) {
-            console.warn('No household ID available for loading dashboard data');
-            return;
-        }
-
-        try {
-            console.log('Loading dashboard data for household:', this.currentHouseholdId);
-            const householdData = await apiManager.loadHouseholdData(this.currentHouseholdId);
-            console.log('Dashboard data loaded:', householdData);
-
-            if (!householdData) {
-                throw new Error('No data received from server');
-            }
-
-            this.updateDashboardCards(householdData);
-            this.loadBudgetOverview();
-            this.loadMonthlyTrends();
-        } catch (error) {
-            console.error('ERROR loading dashboard data:', error);
-            console.error('Error details:', {
-                message: error.message,
-                stack: error.stack,
-                householdId: this.currentHouseholdId
-            });
-
-            uiManager.showErrorAlert('Error loading dashboard data. Please try refreshing the page.');
+        if (dashboardManager) {
+            await dashboardManager.loadDashboardData();
+        } else {
+            console.error('Dashboard manager not initialized');
         }
     }
 
-    updateDashboardCards(householdData) {
-        // Calculate and update dashboard summary cards
-        const totalIncome = householdData.incomes?.reduce((sum, income) => sum + income.grossAmount, 0) || 0;
+    updateDashboardWithBudget(budgetData) {
+        if (dashboardManager) {
+            dashboardManager.updateDashboardWithBudget(budgetData);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
 
-        document.getElementById('total-income').textContent = `$${totalIncome.toFixed(2)}`;
-        // Other dashboard card updates would go here
+    updateBudgetCategoriesDisplay(budgetItems) {
+        if (dashboardManager) {
+            dashboardManager.updateBudgetCategoriesDisplay(budgetItems);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateBudgetBreakdownCards(needs, wants, savingsDebt) {
+        if (dashboardManager) {
+            dashboardManager.updateBudgetBreakdownCards(needs, wants, savingsDebt);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateProgressBarAmounts(needs, wants, savingsDebt) {
+        if (dashboardManager) {
+            dashboardManager.updateProgressBarAmounts(needs, wants, savingsDebt);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateDebtSnowballDisplay(snowballData) {
+        if (dashboardManager) {
+            dashboardManager.updateDebtSnowballDisplay(snowballData);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    showEmptyDebtState() {
+        if (dashboardManager) {
+            dashboardManager.showEmptyDebtState();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateDebtSummary(totalMonths) {
+        if (dashboardManager) {
+            dashboardManager.updateDebtSummary(totalMonths);
+                } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateDebtTimeline(projection) {
+        if (dashboardManager) {
+            dashboardManager.updateDebtTimeline(projection);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateDebtMilestones(projection) {
+        if (dashboardManager) {
+            dashboardManager.updateDebtMilestones(projection);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateDebtNextAction(projection) {
+        if (dashboardManager) {
+            dashboardManager.updateDebtNextAction(projection);
+            } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateProjectionDisplay(projectionData) {
+        if (dashboardManager) {
+            dashboardManager.updateProjectionDisplay(projectionData);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateContextualTips() {
+        if (dashboardManager) {
+            dashboardManager.updateContextualTips();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateBudgetPerformanceTip() {
+        if (dashboardManager) {
+            dashboardManager.updateBudgetPerformanceTip();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateEmergencyFundTip() {
+        if (dashboardManager) {
+            dashboardManager.updateEmergencyFundTip();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateStateComparisonTip() {
+        if (dashboardManager) {
+            dashboardManager.updateStateComparisonTip();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateNextMilestoneTip() {
+        if (dashboardManager) {
+            dashboardManager.updateNextMilestoneTip();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateEmergencyFundTracking() {
+        if (dashboardManager) {
+            dashboardManager.updateEmergencyFundTracking();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    adjustEmergencyFund() {
+        if (dashboardManager) {
+            dashboardManager.adjustEmergencyFund();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    showEmptyProjectionState() {
+        if (dashboardManager) {
+            dashboardManager.showEmptyProjectionState();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateProjectionMetrics(projectionData) {
+        if (dashboardManager) {
+            dashboardManager.updateProjectionMetrics(projectionData);
+            } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateMonthlyProjection(projectionData) {
+        if (dashboardManager) {
+            dashboardManager.updateMonthlyProjection(projectionData);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    updateProjectionMilestones(months) {
+        if (dashboardManager) {
+            dashboardManager.updateProjectionMilestones(months);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    createProjectionTable(months) {
+        if (dashboardManager) {
+            dashboardManager.createProjectionTable(months);
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
+    }
+
+    findEmergencyFundMilestone(months) {
+        if (dashboardManager) {
+            return dashboardManager.findEmergencyFundMilestone(months);
+        } else {
+            console.error('Dashboard manager not initialized');
+        return 0;
+        }
+    }
+
+    findFirstDebtPayoff(months) {
+        if (dashboardManager) {
+            return dashboardManager.findFirstDebtPayoff(months);
+        } else {
+            console.error('Dashboard manager not initialized');
+        return 0;
+        }
+    }
+
+    findFullEmergencyFundMilestone(months) {
+        if (dashboardManager) {
+            return dashboardManager.findFullEmergencyFundMilestone(months);
+        } else {
+            console.error('Dashboard manager not initialized');
+        return 0;
+        }
+    }
+
+    getTotalDebtBalance() {
+        if (dashboardManager) {
+            return dashboardManager.getTotalDebtBalance();
+        } else {
+            console.error('Dashboard manager not initialized');
+        return 0;
+        }
     }
 
     // Chart Management Methods
     updateBudgetChart() {
-        // Budget chart update logic would go here
-        console.log('Budget chart update would be implemented here');
+        if (dashboardManager) {
+            dashboardManager.updateBudgetChart();
+            } else {
+            console.error('Dashboard manager not initialized');
+        }
     }
 
     loadBudgetOverview() {
-        // Budget overview loading logic would go here
-        console.log('Budget overview loading would be implemented here');
+        if (dashboardManager) {
+            dashboardManager.loadBudgetOverview();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
     }
 
     loadMonthlyTrends() {
-        // Monthly trends loading logic would go here
-        console.log('Monthly trends loading would be implemented here');
+        if (dashboardManager) {
+            dashboardManager.loadMonthlyTrends();
+        } else {
+            console.error('Dashboard manager not initialized');
+        }
     }
 
-    // Budget Management Methods
-    generateBudget() {
-        // Budget generation logic would go here
-        console.log('Budget generation would be implemented here');
+    // Budget Management Methods - Now handled by budgetManager
+    async generateBudget() {
+        if (budgetManager) {
+            await budgetManager.generateBudget();
+        } else {
+            console.error('Budget manager not initialized');
+            uiManager.showErrorAlert('Budget functionality not available');
+        }
     }
 
     // Module Management Methods
@@ -666,6 +958,7 @@ class FinancialApp {
 // Create global app instance
 const financialApp = new FinancialApp();
 
+// Initialize budget and dashboard managers
 try {
     // Check if managers are already created by their respective modules
     if (typeof authManager === 'undefined') {
@@ -686,11 +979,29 @@ try {
         console.log('apiManager found and ready');
     }
 
+    // Initialize budget manager if budget.js loaded
+    if (typeof BudgetManager !== 'undefined') {
+        budgetManager = new BudgetManager(financialApp);
+        console.log('Budget manager initialized');
+    } else {
+        console.warn('Budget manager not available - budget.js may not have loaded correctly');
+    }
+
+    // Initialize dashboard manager if dashboard.js loaded
+    if (typeof DashboardManager !== 'undefined') {
+        dashboardManager = new DashboardManager(financialApp);
+        console.log('Dashboard manager initialized');
+    } else {
+        console.warn('Dashboard manager not available - dashboard.js may not have loaded correctly');
+    }
+
     // Expose managers globally for cross-module access (they should already be defined)
     window.authManager = authManager;
     window.uiManager = uiManager;
     window.apiManager = apiManager;
     window.financialApp = financialApp;
+    window.budgetManager = budgetManager;
+    window.dashboardManager = dashboardManager;
 
     console.log('All modules loaded and globals exposed successfully');
 
@@ -699,9 +1010,10 @@ try {
 }
 
 // Expose functions globally for onclick handlers
-window.showDashboard = () => financialApp.showDashboard();
-window.showBudgetSection = () => financialApp.showBudgetSection();
-window.showModulesSection = () => financialApp.showModulesSection();
+window.showDashboard = () => window.location.href = 'dashboard.html';
+window.showBudgetSection = () => window.location.href = 'budget.html';
+window.showModulesSection = () => window.location.href = 'modules.html';
 window.addTransaction = () => financialApp.addTransaction();
 window.viewReports = () => financialApp.viewReports();
 window.toggleCategoryView = () => financialApp.toggleCategoryView();
+window.adjustEmergencyFund = () => financialApp.adjustEmergencyFund();

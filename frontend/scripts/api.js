@@ -177,7 +177,7 @@ class ApiManager {
 
     async createBudget(budgetData) {
         try {
-            const response = await fetch(`${this.baseUrl}/budget`, {
+            const response = await fetch(`${this.baseUrl}/budget/generate`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

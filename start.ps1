@@ -124,7 +124,7 @@ Write-Host "Cleaning up ports..."
 
 # Configure servers based on availability
 $servers = @(
-    @{Name = "Backend"; Port = 5267; Dir = $backendDir; Cmd = "dotnet"; Args = "run"; Timeout = 30; Url = "http://localhost:5267"}
+    @{Name = "Backend"; Port = 5267; Dir = $backendDir; Cmd = "dotnet"; Args = "run"; Timeout = 60; Url = "http://localhost:5267"}
 )
 
 # Try to start frontend server with fallback logic

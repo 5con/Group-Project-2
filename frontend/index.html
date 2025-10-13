@@ -38,13 +38,13 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="#dashboard" id="nav-dashboard">Dashboard</a>
+                        <a class="nav-link" href="dashboard.html" id="nav-dashboard">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#budget" id="nav-budget">Budget</a>
+                        <a class="nav-link" href="budget.html" id="nav-budget">Budget</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#modules" id="nav-modules">Learning Modules</a>
+                        <a class="nav-link" href="modules.html" id="nav-modules">Learning Modules</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="account.html">Account</a>
@@ -245,6 +245,14 @@
                 <div class="col-md-3">
                     <div class="card bg-success text-white">
                         <div class="card-body">
+                            <h5 class="card-title">Net Income</h5>
+                            <h3 id="net-income" class="mb-0">$0.00</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
                             <h5 class="card-title">Budgeted</h5>
                             <h3 id="total-budgeted" class="mb-0">$0.00</h3>
                         </div>
@@ -303,6 +311,107 @@
                 </div>
             </div>
 
+            <!-- Budget Breakdown -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">Needs (50%)</h5>
+                        </div>
+                        <div class="card-body">
+                            <h3 id="needs-amount" class="text-primary mb-0">$0.00</h3>
+                            <small class="text-muted">Housing, Groceries, Transport, Utilities</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-warning">
+                        <div class="card-header bg-warning">
+                            <h5 class="mb-0">Wants (30%)</h5>
+                        </div>
+                        <div class="card-body">
+                            <h3 id="wants-amount" class="text-warning mb-0">$0.00</h3>
+                            <small class="text-muted">Dining, Entertainment, Personal</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-success">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0">Savings/Debt (20%)</h5>
+                        </div>
+                        <div class="card-body">
+                            <h3 id="savings-amount" class="text-success mb-0">$0.00</h3>
+                            <small class="text-muted">Emergency Fund, Debt Payoff</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debt Payoff Timeline -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-info">
+                        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Debt Freedom Timeline</h5>
+                            <div class="debt-summary">
+                                <span class="badge bg-light text-dark me-2" id="current-debt-focus">No active debt</span>
+                                <span class="badge bg-success" id="months-to-debt-free">-</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <div id="debt-timeline">
+                                        <div class="text-center">
+                                            <p class="text-muted mb-3">Complete onboarding with debt information to see your personalized debt payoff plan</p>
+                                            <div class="debt-visualization">
+                                                <div class="debt-progress-container">
+                                                    <div class="debt-progress-bar">
+                                                        <div class="debt-progress-fill" id="debt-progress-fill" style="width: 0%"></div>
+                                                    </div>
+                                                    <div class="debt-milestones">
+                                                        <div class="milestone" id="milestone-1">
+                                                            <small>First Debt</small>
+                                                            <br>
+                                                            <strong id="milestone-1-amount">$0</strong>
+                                                        </div>
+                                                        <div class="milestone" id="milestone-2">
+                                                            <small>Second Debt</small>
+                                                            <br>
+                                                            <strong id="milestone-2-amount">$0</strong>
+                                                        </div>
+                                                        <div class="milestone" id="milestone-3">
+                                                            <small>Debt Free!</small>
+                                                            <br>
+                                                            <strong id="milestone-3-amount">$0</strong>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="debt-details">
+                                        <h6>Next Best Action</h6>
+                                        <div id="next-action" class="mb-3">
+                                            <div class="alert alert-info">
+                                                <i class="bi bi-lightbulb me-2"></i>
+                                                <strong>Add debt information</strong> during onboarding to see your personalized debt payoff strategy.
+                                            </div>
+                                        </div>
+                                        <button class="btn btn-outline-info w-100" onclick="showBudgetSection()">
+                                            <i class="bi bi-pencil me-2"></i>Adjust Budget
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Budget Overview -->
             <div class="row mb-4">
                 <div class="col-md-8">
@@ -336,6 +445,7 @@
                                     <div class="progress">
                                         <div class="progress-bar bg-primary" id="needs-progress" style="width: 0%"></div>
                                     </div>
+                                    <small class="text-muted" id="needs-amount-text">$0.00 allocated</small>
                                 </div>
                                 <div class="progress-item mb-3">
                                     <div class="d-flex justify-content-between mb-1">
@@ -345,6 +455,7 @@
                                     <div class="progress">
                                         <div class="progress-bar bg-warning" id="wants-progress" style="width: 0%"></div>
                                     </div>
+                                    <small class="text-muted" id="wants-amount-text">$0.00 allocated</small>
                                 </div>
                                 <div class="progress-item mb-3">
                                     <div class="d-flex justify-content-between mb-1">
@@ -353,6 +464,70 @@
                                     </div>
                                     <div class="progress">
                                         <div class="progress-bar bg-success" id="savings-progress" style="width: 0%"></div>
+                                    </div>
+                                    <small class="text-muted" id="savings-amount-text">$0.00 allocated</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Financial Insights & Tips -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-info">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="bi bi-lightbulb me-2"></i>Financial Insights</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="insight-item mb-3">
+                                        <div class="d-flex align-items-start">
+                                            <i class="bi bi-graph-up text-success me-3 mt-1"></i>
+                                            <div>
+                                                <h6 class="mb-1">Budget Performance</h6>
+                                                <p class="text-muted small mb-0" id="budget-performance-tip">
+                                                    You're on track with the 50/30/20 rule! This balanced approach helps build wealth while enjoying life.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="insight-item mb-3">
+                                        <div class="d-flex align-items-start">
+                                            <i class="bi bi-piggy-bank text-primary me-3 mt-1"></i>
+                                            <div>
+                                                <h6 class="mb-1">Emergency Fund Status</h6>
+                                                <p class="text-muted small mb-0" id="emergency-fund-tip">
+                                                    Aim for 3-6 months of expenses in your emergency fund for financial security.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="insight-item mb-3">
+                                        <div class="d-flex align-items-start">
+                                            <i class="bi bi-shield-check text-warning me-3 mt-1"></i>
+                                            <div>
+                                                <h6 class="mb-1">State Comparison</h6>
+                                                <p class="text-muted small mb-0" id="state-comparison-tip">
+                                                    Based on your state, you're doing well compared to similar households in your area.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="insight-item">
+                                        <div class="d-flex align-items-start">
+                                            <i class="bi bi-target text-danger me-3 mt-1"></i>
+                                            <div>
+                                                <h6 class="mb-1">Next Milestone</h6>
+                                                <p class="text-muted small mb-0" id="next-milestone-tip">
+                                                    Focus on building your emergency fund - you're making great progress toward financial security!
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -451,17 +626,45 @@
             <div class="row">
                 <div class="col-md-6">
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header d-flex justify-content-between align-items-center">
                             <h5 class="mb-0">Emergency Fund Progress</h5>
+                            <div class="fund-targets">
+                                <select class="form-select form-select-sm" id="emergency-fund-target" style="width: auto;">
+                                    <option value="1000">$1,000 Starter</option>
+                                    <option value="3months">3 Months Expenses</option>
+                                    <option value="6months" selected>6 Months Expenses</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="card-body">
                             <div id="emergency-fund-progress">
-                                <div class="text-center">
-                                    <h3 class="text-success">$0 / $0</h3>
-                                    <div class="progress mb-3">
-                                        <div class="progress-bar bg-success" style="width: 0%"></div>
+                                <div class="fund-visualization">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span>Current: <strong id="current-fund-amount">$0</strong></span>
+                                        <span>Target: <strong id="target-fund-amount">$0</strong></span>
                                     </div>
-                                    <p class="text-muted">Target: 3-6 months of expenses</p>
+                                    <div class="progress mb-3">
+                                        <div class="progress-bar bg-success" id="emergency-fund-progress-bar" style="width: 0%"></div>
+                                    </div>
+                                    <div class="fund-details">
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <small class="text-muted">Monthly Contribution</small>
+                                                <br>
+                                                <strong id="monthly-contribution">$0</strong>
+                                            </div>
+                                            <div class="col-6 text-end">
+                                                <small class="text-muted">Est. Completion</small>
+                                                <br>
+                                                <strong id="completion-date">-</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <button class="btn btn-sm btn-outline-success" onclick="adjustEmergencyFund()">
+                                            <i class="bi bi-pencil me-1"></i>Adjust Target
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -584,8 +787,13 @@
             <div class="row">
                 <div class="col-12">
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header d-flex justify-content-between align-items-center">
                             <h5 class="mb-0">Budget Categories</h5>
+                            <div class="budget-totals">
+                                <span class="badge bg-primary me-2" id="total-allocated">$0.00 allocated</span>
+                                <span class="badge bg-success me-2" id="remaining-amount">$0.00 remaining</span>
+                                <span class="badge bg-warning" id="over-budget-alert" style="display: none;">Over Budget!</span>
+                            </div>
                         </div>
                         <div class="card-body">
                             <div id="budget-categories">
@@ -595,6 +803,86 @@
                                     </div>
                                     <p class="mt-2">Select a budget method and click "Generate Budget" to see categories</p>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Budget Category Templates -->
+            <div id="budget-templates" style="display: none;">
+                <!-- Needs Categories Template -->
+                <div class="category-section mb-4" data-category-type="needs">
+                    <h6 class="section-title">
+                        <i class="bi bi-house-door me-2"></i>Needs (50%)
+                        <span class="float-end text-muted" id="needs-total">$0.00</span>
+                    </h6>
+                    <div class="category-items" id="needs-categories">
+                        <!-- Categories will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Wants Categories Template -->
+                <div class="category-section mb-4" data-category-type="wants">
+                    <h6 class="section-title">
+                        <i class="bi bi-emoji-smile me-2"></i>Wants (30%)
+                        <span class="float-end text-muted" id="wants-total">$0.00</span>
+                    </h6>
+                    <div class="category-items" id="wants-categories">
+                        <!-- Categories will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Savings/Debt Categories Template -->
+                <div class="category-section mb-4" data-category-type="savings">
+                    <h6 class="section-title">
+                        <i class="bi bi-bank me-2"></i>Savings & Debt (20%)
+                        <span class="float-end text-muted" id="savings-total">$0.00</span>
+                    </h6>
+                    <div class="category-items" id="savings-categories">
+                        <!-- Categories will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Category Item Template -->
+            <div class="category-item-template" style="display: none;">
+                <div class="category-item border rounded p-3 mb-3">
+                    <div class="row align-items-center">
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check me-2">
+                                    <input class="form-check-input category-lock" type="checkbox" id="lock-{id}">
+                                    <label class="form-check-label" for="lock-{id}">
+                                        <small>Lock</small>
+                                    </label>
+                                </div>
+                                <div>
+                                    <strong class="category-name">{name}</strong>
+                                    <br>
+                                    <small class="text-muted category-description">{description}</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="budget-slider-container">
+                                <input type="range" class="form-range budget-slider" min="0" max="{maxAmount}" step="10" value="{plannedAmount}" id="slider-{id}">
+                                <div class="slider-labels">
+                                    <span class="slider-min">$0</span>
+                                    <span class="slider-current" id="current-{id}">${plannedAmount}</span>
+                                    <span class="slider-max">${maxAmount}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">$</span>
+                                <input type="number" class="form-control budget-input" id="input-{id}" value="{plannedAmount}" step="10" min="0">
+                            </div>
+                        </div>
+                        <div class="col-md-1">
+                            <div class="category-alert" id="alert-{id}" style="display: none;">
+                                <i class="bi bi-exclamation-triangle text-warning" title="Amount exceeds recommended range"></i>
                             </div>
                         </div>
                     </div>
