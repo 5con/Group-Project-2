@@ -21,7 +21,10 @@ class DashboardManager {
             this.householdData = await apiManager.loadHouseholdData(this.financialApp.currentHouseholdId);
             console.log('Household data loaded:', this.householdData);
 
-            // Load the latest budget for this household
+            // Update basic dashboard cards with household data
+            this.updateDashboardCards(this.householdData);
+
+            // Try to load existing budget data
             const currentDate = new Date();
             const budgetData = await apiManager.loadBudgetData(this.financialApp.currentHouseholdId, `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`);
 
@@ -34,15 +37,23 @@ class DashboardManager {
                 // Update dashboard with budget data
                 this.updateDashboardWithBudget(latestBudget);
 
-                // Show success message about budget generation
-                uiManager.showSuccessAlert('Your personalized budget has been generated! Review and customize it using the budget builder.');
+                // Show success message about budget being loaded
+                uiManager.showSuccessAlert('Your budget has been loaded successfully!');
             } else {
-                console.warn('No budget data found, generating new budget...');
-                await this.generateNewBudget();
+                console.log('No existing budget found, showing empty state');
+                this.showBudgetEmptyState();
             }
         } catch (error) {
-            console.error('Error loading budget data:', error);
-            uiManager.showErrorAlert('Error loading your budget. Please try refreshing the page.');
+            console.error('Error loading household data:', error);
+            
+            let errorMessage = 'Error loading your data. Please try refreshing the page.';
+            if (error.message.includes('household') || error.message.includes('not found')) {
+                errorMessage = 'Account data not found. Please complete onboarding or contact support.';
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = 'Connection error. Please check if the server is running and try again.';
+            }
+            
+            uiManager.showErrorAlert(errorMessage);
         }
     }
 
@@ -89,9 +100,20 @@ class DashboardManager {
             }
 
             this.householdData = householdData;
+            // Store household data in the main app for other components to use
+            this.financialApp.householdData = householdData;
+            
             this.updateDashboardCards(householdData);
+            
+            // Also load current budget if it exists and update dashboard with it
+            if (this.financialApp.currentBudget) {
+                this.updateDashboardWithBudget(this.financialApp.currentBudget);
+            }
+            
             this.loadBudgetOverview();
             this.loadMonthlyTrends();
+            
+            console.log('Dashboard data loading completed successfully');
         } catch (error) {
             console.error('ERROR loading dashboard data:', error);
             console.error('Error details:', {
@@ -105,11 +127,89 @@ class DashboardManager {
     }
 
     updateDashboardCards(householdData) {
-        // Calculate and update dashboard summary cards
-        const totalIncome = householdData.incomes?.reduce((sum, income) => sum + income.grossAmount, 0) || 0;
+        console.log('Updating dashboard cards with household data:', householdData);
+        
+        // Calculate total monthly income
+        let totalMonthlyIncome = 0;
+        if (householdData.incomes && householdData.incomes.length > 0) {
+            totalMonthlyIncome = householdData.incomes.reduce((sum, income) => {
+                let monthlyAmount = income.grossAmount || 0;
+                
+                // Convert to monthly based on cadence
+                switch (income.cadence?.toLowerCase()) {
+                    case 'weekly':
+                        monthlyAmount = monthlyAmount * 4.33;
+                        break;
+                    case 'biweekly':
+                        monthlyAmount = monthlyAmount * 2.17;
+                        break;
+                    case 'semimonthly':
+                        monthlyAmount = monthlyAmount * 2;
+                        break;
+                    case 'monthly':
+                    default:
+                        // Already monthly
+                        break;
+                }
+                
+                return sum + monthlyAmount;
+            }, 0);
+        }
 
-        document.getElementById('total-income').textContent = `$${totalIncome.toFixed(2)}`;
-        // Other dashboard card updates would go here
+        // Calculate estimated net income (rough estimate - 20% taxes)
+        const estimatedTaxRate = 0.20; // Default 20% if no state data
+        const estimatedTax = totalMonthlyIncome * estimatedTaxRate;
+        const netIncome = totalMonthlyIncome - estimatedTax;
+
+        // Update income cards
+        const totalIncomeElement = document.getElementById('total-income');
+        if (totalIncomeElement) {
+            totalIncomeElement.textContent = `$${totalMonthlyIncome.toFixed(2)}`;
+        }
+
+        const netIncomeElement = document.getElementById('net-income');
+        if (netIncomeElement) {
+            netIncomeElement.textContent = `$${netIncome.toFixed(2)}`;
+        }
+
+        // Calculate total budgeted (if budget exists)
+        let totalBudgeted = 0;
+        if (this.financialApp.currentBudget && this.financialApp.currentBudget.budgetItems) {
+            totalBudgeted = this.financialApp.currentBudget.budgetItems.reduce((sum, item) => {
+                return sum + (item.plannedAmount || 0);
+            }, 0);
+        } else if (this.financialApp.currentBudget && this.financialApp.currentBudget.summary) {
+            totalBudgeted = this.financialApp.currentBudget.summary.totalBudgeted || 0;
+        }
+
+        const budgetedElement = document.getElementById('total-budgeted');
+        if (budgetedElement) {
+            budgetedElement.textContent = `$${totalBudgeted.toFixed(2)}`;
+        }
+
+        // Calculate remaining budget
+        const remaining = netIncome - totalBudgeted;
+        const remainingElement = document.getElementById('remaining-budget');
+        if (remainingElement) {
+            remainingElement.textContent = `$${remaining.toFixed(2)}`;
+            
+            // Update card color based on remaining amount
+            const card = remainingElement.closest('.card');
+            if (card) {
+                card.className = remaining >= 0 ? 'card bg-success text-white' : 'card bg-danger text-white';
+            }
+        }
+
+        // Store calculated values for other methods
+        this.calculatedNetIncome = netIncome;
+        this.calculatedTotalIncome = totalMonthlyIncome;
+
+        console.log('Dashboard cards updated:', {
+            totalMonthlyIncome: totalMonthlyIncome.toFixed(2),
+            netIncome: netIncome.toFixed(2),
+            totalBudgeted: totalBudgeted.toFixed(2),
+            remaining: remaining.toFixed(2)
+        });
     }
 
     updateDashboardWithBudget(budgetData) {
@@ -162,9 +262,10 @@ class DashboardManager {
         console.log('Updating budget categories display with:', budgetItems);
 
         // Group budget items by category type
-        const needsItems = budgetItems?.filter(item => item.category?.isNeed) || [];
-        const wantsItems = budgetItems?.filter(item => !item.category?.isNeed && !item.category?.name?.toLowerCase().includes('debt') && !item.category?.name?.toLowerCase().includes('emergency') && !item.category?.name?.toLowerCase().includes('retirement')) || [];
-        const savingsDebtItems = budgetItems?.filter(item => item.category?.name?.toLowerCase().includes('debt') || item.category?.name?.toLowerCase().includes('emergency') || item.category?.name?.toLowerCase().includes('retirement')) || [];
+        const items = budgetItems || [];
+        const needsItems = items.filter(item => item.category?.isNeed);
+        const wantsItems = items.filter(item => !item.category?.isNeed && !item.category?.name?.toLowerCase().includes('debt') && !item.category?.name?.toLowerCase().includes('emergency') && !item.category?.name?.toLowerCase().includes('retirement'));
+        const savingsDebtItems = items.filter(item => item.category?.name?.toLowerCase().includes('debt') || item.category?.name?.toLowerCase().includes('emergency') || item.category?.name?.toLowerCase().includes('retirement'));
 
         // Update the budget breakdown cards
         this.updateBudgetBreakdownCards(needsItems, wantsItems, savingsDebtItems);
@@ -237,6 +338,55 @@ class DashboardManager {
 
         // Update next action recommendations
         this.updateDebtNextAction(projection);
+    }
+
+    showBudgetEmptyState() {
+        // Show empty state when no budget data is available
+        console.log('Showing budget empty state');
+        
+        // Update budget totals to show zeros
+        const totalBudgetedElement = document.getElementById('total-budgeted');
+        if (totalBudgetedElement) {
+            totalBudgetedElement.textContent = '$0.00';
+        }
+
+        // Show create budget call-to-action in budget breakdown section
+        const budgetBreakdownSection = document.querySelector('.budget-breakdown');
+        if (budgetBreakdownSection) {
+            const container = budgetBreakdownSection.querySelector('.row') || budgetBreakdownSection;
+            container.innerHTML = `
+                <div class="col-12 mb-4">
+                    <div class="card bg-light border-primary">
+                        <div class="card-body text-center p-4">
+                            <i class="bi bi-wallet2 display-4 text-primary mb-3"></i>
+                            <h3 class="card-title">Create Your First Budget</h3>
+                            <p class="card-text text-muted">
+                                Get started by creating a personalized budget. We'll help you allocate your income 
+                                across needs, wants, and savings based on proven budgeting methods.
+                            </p>
+                            <div class="mt-4">
+                                <a href="budget.html" class="btn btn-primary btn-lg me-2">
+                                    <i class="bi bi-magic me-2"></i>Create Budget
+                                </a>
+                                <button class="btn btn-outline-primary btn-lg" onclick="dashboardManager.generateNewBudget()">
+                                    <i class="bi bi-lightning me-2"></i>Quick Generate
+                                </button>
+                            </div>
+                            <p class="small text-muted mt-3 mb-0">
+                                Takes less than 2 minutes to set up your personalized budget
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Show empty states for other sections
+        this.showEmptyDebtState();
+        this.showEmptyProjectionState();
+
+        // Update contextual tips for new users
+        this.updateContextualTipsForNewUser();
     }
 
     showEmptyDebtState() {
@@ -589,6 +739,31 @@ class DashboardManager {
         this.updateNextMilestoneTip();
     }
 
+    updateContextualTipsForNewUser() {
+        console.log('Updating contextual tips for new user');
+
+        // Update budget performance tip for new users
+        const budgetPerformanceTip = document.getElementById('budget-performance-tip');
+        if (budgetPerformanceTip) {
+            budgetPerformanceTip.textContent = 'Create your first budget to see personalized performance insights and recommendations.';
+        }
+
+        // Update emergency fund tip for new users
+        const emergencyFundTip = document.getElementById('emergency-fund-tip');
+        if (emergencyFundTip) {
+            emergencyFundTip.textContent = 'Start with a $1,000 beginner emergency fund, then work toward 3-6 months of expenses.';
+        }
+
+        // Update state comparison tip
+        this.updateStateComparisonTip();
+
+        // Update next milestone tip for new users
+        const nextMilestoneTip = document.getElementById('next-milestone-tip');
+        if (nextMilestoneTip) {
+            nextMilestoneTip.textContent = 'Your first milestone: Create a budget to track your income and expenses effectively.';
+        }
+    }
+
     updateBudgetPerformanceTip() {
         const tipElement = document.getElementById('budget-performance-tip');
         if (!tipElement) return;
@@ -820,3 +995,27 @@ class DashboardManager {
 
 // Create global dashboard manager instance
 let dashboardManager;
+
+// Safe auto-initializer: ensure dashboardManager is created when financialApp becomes available
+if (typeof window.dashboardManager === 'undefined') {
+    if (typeof window !== 'undefined' && window.financialApp) {
+        try {
+            window.dashboardManager = new DashboardManager(window.financialApp);
+            console.log('Dashboard manager auto-initialized (immediate)');
+        } catch (err) {
+            console.error('Failed to auto-initialize dashboardManager immediately:', err);
+        }
+    } else {
+        // Defer until DOMContentLoaded so that app.js or inline initializers can run first
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof window.dashboardManager === 'undefined' && window.financialApp && typeof DashboardManager !== 'undefined') {
+                try {
+                    window.dashboardManager = new DashboardManager(window.financialApp);
+                    console.log('Dashboard manager auto-initialized on DOMContentLoaded');
+                } catch (err) {
+                    console.error('Failed to auto-initialize dashboardManager on DOMContentLoaded:', err);
+                }
+            }
+        });
+    }
+}

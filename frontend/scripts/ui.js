@@ -34,38 +34,44 @@ class UIManager {
     }
 
     setupLoginEventListeners() {
-        // Regular login form
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
+        // Handle login form submission (demo mode - no auth required)
+        const form = document.getElementById('login-form');
+        if (!form) return;
+        form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-password').value;
 
-            try {
-                await authManager.handleLogin(email, password);
-                this.showMainApp();
-            } catch (error) {
-                this.showAlert(error.message, 'danger');
+            if (!email) {
+                this.showAlert('Please enter an email address', 'danger');
+                return;
             }
-        });
 
-        // Developer login form
-        document.getElementById('developer-login-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const password = document.getElementById('dev-password').value;
-
+            // Store email in sessionStorage so login is required each session
             try {
-                await authManager.handleDeveloperLogin(password);
-                this.showMainApp();
-            } catch (error) {
-                this.showAlert(error.message, 'danger');
+                sessionStorage.setItem('userEmail', email);
+            } catch (err) {
+                // Fallback to localStorage if sessionStorage unavailable
+                localStorage.setItem('userEmail', email);
+            }
+
+            // Determine destination: existing household -> dashboard, else -> onboarding
+            try {
+                const res = await fetch(`http://localhost:5267/api/onboarding/household/by-email/${encodeURIComponent(email)}`);
+                if (res.ok) {
+                    const hh = await res.json();
+                    const id = hh.id ?? hh.Id;
+                    if (id) localStorage.setItem('currentHouseholdId', String(id));
+                    window.location.href = 'dashboard.html';
+                } else {
+                    window.location.href = 'onboarding.html';
+                }
+            } catch (err) {
+                // Backend not reachable: fall back to account setup
+                window.location.href = 'account.html';
             }
         });
     }
 
-    showDeveloperLogin() {
-        const devSection = document.getElementById('developer-login-section');
-        devSection.style.display = devSection.style.display === 'none' ? 'block' : 'none';
-    }
 
     showMainApp() {
         const loginSection = document.getElementById('login-section');
@@ -92,16 +98,20 @@ class UIManager {
     }
 
     populateUserEmail() {
-        if (authManager.getCurrentUser() && authManager.getCurrentUser().email) {
-            const emailInput = document.getElementById('email');
-            const userEmailDisplay = document.getElementById('user-email-display');
+        const emailInput = document.getElementById('email');
+        const userEmailDisplay = document.getElementById('user-email-display');
 
-            if (emailInput) {
-                emailInput.value = authManager.getCurrentUser().email;
-            }
-
-            if (userEmailDisplay) {
-                userEmailDisplay.textContent = authManager.getCurrentUser().email;
+        if (emailInput && userEmailDisplay) {
+            // Only set demo email if field is empty and we're not on account page during setup
+            if (!emailInput.value) {
+                const storedEmail = localStorage.getItem('userEmail');
+                if (storedEmail) {
+                    emailInput.value = storedEmail;
+                    userEmailDisplay.textContent = storedEmail;
+                } else {
+                    emailInput.value = 'demo@example.com';
+                    userEmailDisplay.textContent = 'demo@example.com';
+                }
             }
         }
     }
@@ -227,36 +237,40 @@ class UIManager {
         }
     }
 
-    // Global function for logout (called from HTML)
-    logout() {
-        authManager.logout();
-        this.showLogin();
-    }
 
     clearAuthData() {
-        // Clear all authentication data and reset to clean state
-        authManager.logout();
+        // Clear all data and reset to clean state
         localStorage.clear(); // Clear everything including completed modules
         sessionStorage.clear(); // Clear session data too
-        this.showLogin();
+        this.showLogin(); // Show login page after clearing data
     }
 
-    // Global function for showing developer login (called from HTML)
-    toggleDeveloperLogin() {
-        this.showDeveloperLogin();
-    }
 }
 
-// Create global UI instance
-const uiManager = new UIManager();
+// Create global UI instance if it doesn't exist
+if (typeof window.uiManager === 'undefined') {
+    window.uiManager = new UIManager();
+}
 
-// Expose the class globally for other modules
-window.UIManager = UIManager;
+// Expose the class globally for other modules if it doesn't exist
+if (typeof window.UIManager === 'undefined') {
+    window.UIManager = UIManager;
+}
 
-// Expose utility functions globally for debugging/testing
-window.clearAuthData = () => uiManager.clearAuthData();
-window.logout = () => uiManager.logout();
-window.showDeveloperLogin = () => uiManager.showDeveloperLogin();
+// Expose utility functions globally for debugging/testing if they don't exist
+if (typeof window.clearAuthData === 'undefined') {
+    window.clearAuthData = () => window.uiManager.clearAuthData();
+}
+
+// Add a global reset function for troubleshooting
+if (typeof window.resetApp === 'undefined') {
+    window.resetApp = () => {
+        console.log('Resetting application state...');
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = 'index.html';
+    };
+}
 
 // Add error handling and logging
 console.log('UIManager module loaded successfully');

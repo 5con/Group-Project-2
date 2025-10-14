@@ -102,6 +102,13 @@ public class AppDbContext : DbContext
             .HasOne(ump => ump.Module)
             .WithMany(fm => fm.UserProgress)
             .HasForeignKey(ump => ump.ModuleId);
+
+        // Configure User.CurrentHouseholdId relationship
+        modelBuilder.Entity<User>()
+            .HasOne(u => u.CurrentHousehold)
+            .WithMany()
+            .HasForeignKey(u => u.CurrentHouseholdId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }
 
@@ -112,9 +119,13 @@ public class User
     public string Locale { get; set; } = "en-US";
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
+    public int? CurrentHouseholdId { get; set; }
 
     public ICollection<Household> Households { get; set; } = new List<Household>();
     public ICollection<UserModuleProgress> ModuleProgress { get; set; } = new List<UserModuleProgress>();
+
+    // Navigation property for current household
+    public Household? CurrentHousehold { get; set; }
 }
 
 public class Household

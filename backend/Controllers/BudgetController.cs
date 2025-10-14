@@ -102,17 +102,23 @@ public class BudgetController : ControllerBase
         // Generate debt snowball projection
         var snowballProjection = GenerateDebtSnowballProjection(household, netIncome);
 
+        // Reload full budget with categories populated for client grouping
+        var full = await _context.Budgets
+            .Include(b => b.BudgetItems)
+                .ThenInclude(bi => bi.Category)
+            .FirstAsync(b => b.Id == budget.Id);
+
         return Ok(new
         {
-            Budget = budget,
-            BudgetItems = budgetItems.OrderBy(bi => bi.Category.Name),
-            SnowballProjection = snowballProjection,
-            Summary = new
+            budget = full,
+            budgetItems = full.BudgetItems.OrderBy(bi => bi.Category.Name),
+            snowballProjection = snowballProjection,
+            summary = new
             {
-                GrossIncome = totalMonthlyIncome,
-                EstimatedTax = estimatedTax,
-                NetIncome = netIncome,
-                TotalBudgeted = budgetItems.Sum(bi => bi.PlannedAmount)
+                grossIncome = totalMonthlyIncome,
+                estimatedTax = estimatedTax,
+                netIncome = netIncome,
+                totalBudgeted = full.BudgetItems.Sum(bi => bi.PlannedAmount)
             }
         });
     }
@@ -187,18 +193,19 @@ public class BudgetController : ControllerBase
         var categories = _context.Categories.ToList();
         var items = new List<BudgetItem>();
 
-        // 50% Needs
+        // 50% Needs - distribute to all needs categories
         var needsAmount = netIncome * 0.5m;
         var needsCategories = categories.Where(c => c.IsNeed).ToList();
-
-        // Distribute needs proportionally based on typical percentages
         var needsDistribution = new Dictionary<string, decimal>
         {
-            { "Housing", 0.60m }, // 60% of needs
-            { "Groceries", 0.20m }, // 20% of needs
-            { "Transportation", 0.10m }, // 10% of needs
-            { "Utilities", 0.05m }, // 5% of needs
-            { "Insurance", 0.05m } // 5% of needs
+            { "Housing", 0.35m },
+            { "Utilities", 0.10m },
+            { "Groceries", 0.15m },
+            { "Transportation", 0.10m },
+            { "Medical/Health", 0.08m },
+            { "Insurance", 0.07m },
+            { "Childcare", 0.05m },
+            { "Minimum Debt Payments", 0.10m }
         };
 
         foreach (var category in needsCategories)
@@ -212,34 +219,59 @@ public class BudgetController : ControllerBase
                     PlannedAmount = amount
                 });
             }
+            else
+            {
+                // Fallback equal distribution for any missing
+                var fallbackAmount = needsAmount / needsCategories.Count;
+                items.Add(new BudgetItem
+                {
+                    CategoryId = category.Id,
+                    PlannedAmount = fallbackAmount
+                });
+            }
         }
 
-        // 30% Wants
+        // 30% Wants - only non-savings non-needs
         var wantsAmount = netIncome * 0.3m;
-        var wantsCategories = categories.Where(c => !c.IsNeed).ToList();
-        var wantsPerCategory = wantsAmount / wantsCategories.Count;
-
-        foreach (var category in wantsCategories.Take(5)) // Limit to first 5 wants categories
+        var savingsKeywords = new[] { "Debt", "Emergency", "Sinking", "Retirement" };
+        var wantsCategories = categories.Where(c => !c.IsNeed && !savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
+        if (wantsCategories.Any())
         {
-            items.Add(new BudgetItem
+            var wantsPerCategory = wantsAmount / wantsCategories.Count;
+            foreach (var category in wantsCategories)
             {
-                CategoryId = category.Id,
-                PlannedAmount = wantsPerCategory
-            });
+                items.Add(new BudgetItem
+                {
+                    CategoryId = category.Id,
+                    PlannedAmount = wantsPerCategory
+                });
+            }
         }
 
         // 20% Savings/Debt
         var savingsAmount = netIncome * 0.2m;
-        var debtCategories = categories.Where(c => c.Name.Contains("Debt") || c.Name.Contains("Emergency") || c.Name.Contains("Retirement")).ToList();
-        var savingsPerCategory = savingsAmount / debtCategories.Count;
-
-        foreach (var category in debtCategories)
+        var savingsCategories = categories.Where(c => savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
+        if (savingsCategories.Any())
         {
-            items.Add(new BudgetItem
+            var savingsPerCategory = savingsAmount / savingsCategories.Count;
+            foreach (var category in savingsCategories)
             {
-                CategoryId = category.Id,
-                PlannedAmount = savingsPerCategory
-            });
+                // Check if already added as want (shouldn't be)
+                if (!items.Any(i => i.CategoryId == category.Id))
+                {
+                    items.Add(new BudgetItem
+                    {
+                        CategoryId = category.Id,
+                        PlannedAmount = savingsPerCategory
+                    });
+                }
+                else
+                {
+                    // If somehow added, add to existing
+                    var existing = items.First(i => i.CategoryId == category.Id);
+                    existing.PlannedAmount += savingsPerCategory;
+                }
+            }
         }
 
         return items;
@@ -253,49 +285,72 @@ public class BudgetController : ControllerBase
         // Start with essential needs
         var remainingIncome = netIncome;
 
-        // Housing (25-30% of gross, but we'll use net for zero-based)
-        var housingAmount = Math.Min(netIncome * 0.25m, remainingIncome);
-        remainingIncome -= housingAmount;
-
+        // Housing
         var housingCategory = categories.FirstOrDefault(c => c.Name == "Housing");
-        if (housingCategory != null)
+        if (housingCategory != null && remainingIncome > 0)
         {
+            var housingAmount = Math.Min(netIncome * 0.25m, remainingIncome);
+            remainingIncome -= housingAmount;
             items.Add(new BudgetItem { CategoryId = housingCategory.Id, PlannedAmount = housingAmount });
         }
 
-        // Other needs based on typical percentages
+        // Other needs based on typical percentages - include all needs
         var needsPercentages = new Dictionary<string, decimal>
         {
             { "Groceries", 0.12m },
             { "Transportation", 0.08m },
             { "Utilities", 0.08m },
-            { "Insurance", 0.08m }
+            { "Insurance", 0.08m },
+            { "Medical/Health", 0.08m },
+            { "Childcare", 0.05m },
+            { "Minimum Debt Payments", 0.10m }
         };
 
-        foreach (var (categoryName, percentage) in needsPercentages)
+        var needsCategories = categories.Where(c => c.IsNeed && c.Name != "Housing").ToList();
+        foreach (var category in needsCategories)
         {
-            var category = categories.FirstOrDefault(c => c.Name == categoryName);
-            if (category != null && remainingIncome > 0)
+            if (needsPercentages.TryGetValue(category.Name, out var percentage) && remainingIncome > 0)
             {
                 var amount = Math.Min(netIncome * percentage, remainingIncome);
                 remainingIncome -= amount;
                 items.Add(new BudgetItem { CategoryId = category.Id, PlannedAmount = amount });
             }
+            else if (remainingIncome > 0)
+            {
+                // Fallback for any missing needs
+                var fallbackAmount = Math.Min(remainingIncome * 0.05m, remainingIncome);
+                remainingIncome -= fallbackAmount;
+                items.Add(new BudgetItem { CategoryId = category.Id, PlannedAmount = fallbackAmount });
+            }
         }
 
         // Distribute remaining to wants and savings
-        var wantsCategories = categories.Where(c => !c.IsNeed).ToList();
-        var savingsCategories = categories.Where(c => c.Name.Contains("Emergency") || c.Name.Contains("Debt")).ToList();
+        var savingsKeywords = new[] { "Debt", "Emergency", "Sinking", "Retirement" };
+        var wantsCategories = categories.Where(c => !c.IsNeed && !savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
+        var savingsCategories = categories.Where(c => savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
+        var nonNeedsCategories = wantsCategories.Concat(savingsCategories).ToList();
 
-        var remainingPerCategory = remainingIncome / (wantsCategories.Count + savingsCategories.Count);
-
-        foreach (var category in wantsCategories.Concat(savingsCategories))
+        if (nonNeedsCategories.Any() && remainingIncome > 0)
         {
-            if (remainingIncome > 0)
+            var remainingPerCategory = remainingIncome / nonNeedsCategories.Count;
+            foreach (var category in nonNeedsCategories)
             {
-                var amount = Math.Min(remainingPerCategory, remainingIncome);
-                remainingIncome -= amount;
-                items.Add(new BudgetItem { CategoryId = category.Id, PlannedAmount = amount });
+                if (remainingIncome > 0)
+                {
+                    var amount = Math.Min(remainingPerCategory, remainingIncome);
+                    remainingIncome -= amount;
+
+                    // Check if already added (shouldn't for non-needs)
+                    var existing = items.FirstOrDefault(i => i.CategoryId == category.Id);
+                    if (existing != null)
+                    {
+                        existing.PlannedAmount += amount;
+                    }
+                    else
+                    {
+                        items.Add(new BudgetItem { CategoryId = category.Id, PlannedAmount = amount });
+                    }
+                }
             }
         }
 
