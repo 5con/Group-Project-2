@@ -19,9 +19,9 @@
 
     async function loadHousehold(email) {
         try {
-            // Prefer stored household id (from onboarding) if present, otherwise fall back to demo id
+            // Prefer stored household id (from onboarding) if present, otherwise fall back to stored id
             const storedHouseholdId = localStorage.getItem('currentHouseholdId');
-            const householdId = storedHouseholdId ? parseInt(storedHouseholdId, 10) : 1;
+            const householdId = storedHouseholdId ? parseInt(storedHouseholdId, 10) : null;
             const hh = await apiManager.loadHouseholdData(householdId);
             return hh;
         } catch (err) {
@@ -227,7 +227,7 @@
 
     function renderUserCard() {
         const email = getStoredUserEmail();
-        setText('account-email', email || 'Guest User');
+        setText('account-email', email || 'No email set');
         setText('account-user-id', 'N/A');
         setText('account-mode', 'Standard');
     }

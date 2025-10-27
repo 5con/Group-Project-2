@@ -450,7 +450,7 @@ class DashboardManager {
             progressFill.style.width = `${progressPercentage}%`;
         }
 
-        // Update milestones (simplified for demo - would be more sophisticated in real implementation)
+        // Update milestones
         this.updateDebtMilestones(projection);
     }
 
@@ -592,7 +592,7 @@ class DashboardManager {
         const monthlyProjection = document.getElementById('monthly-projection');
         if (!monthlyProjection) return;
 
-        // Generate sample monthly projection data (in real implementation, this would come from backend)
+        // Generate monthly projection data
         const months = [];
         const netIncome = this.financialApp.currentBudget?.summary?.netIncome || 0;
 
@@ -990,6 +990,362 @@ class DashboardManager {
             month: 'long',
             day: 'numeric'
         }).format(new Date(date));
+    }
+
+    // ============= RECOMMENDATION & INSIGHTS FEATURES =============
+
+    /**
+     * Load and display top recommended actions
+     */
+    async loadTopActions() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const actions = await apiManager.getTopActions(this.financialApp.currentHouseholdId);
+            this.displayTopActions(actions);
+        } catch (error) {
+            console.error('Error loading top actions:', error);
+        }
+    }
+
+    /**
+     * Display top recommended actions
+     */
+    displayTopActions(actions) {
+        const container = document.getElementById('top-actions');
+        if (!container) return;
+
+        if (!actions || actions.length === 0) {
+            container.innerHTML = '<p class="text-muted">No recommendations available at this time.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-lightbulb me-2"></i>Top 3 Actions</h5>
+                </div>
+                <div class="list-group list-group-flush">
+                    ${actions.slice(0, 3).map((action, index) => `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">
+                                    <span class="badge bg-primary me-2">${index + 1}</span>
+                                    ${action.title}
+                                </h6>
+                                <small class="text-${action.priority === 'High' ? 'danger' : action.priority === 'Medium' ? 'warning' : 'info'}">
+                                    ${action.priority} Priority
+                                </small>
+                            </div>
+                            <p class="mb-1">${action.description}</p>
+                            ${action.estimatedImpact ? `
+                                <small class="text-success">
+                                    <i class="bi bi-graph-up-arrow me-1"></i>
+                                    Potential impact: ${this.formatCurrency(action.estimatedImpact)}
+                                </small>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display financial tips
+     */
+    async loadFinancialTips() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const tips = await apiManager.getFinancialTips(this.financialApp.currentHouseholdId);
+            this.displayFinancialTips(tips);
+        } catch (error) {
+            console.error('Error loading financial tips:', error);
+        }
+    }
+
+    /**
+     * Display financial tips
+     */
+    displayFinancialTips(tips) {
+        const container = document.getElementById('financial-tips');
+        if (!container) return;
+
+        if (!tips || tips.length === 0) {
+            container.innerHTML = '<p class="text-muted">No tips available.</p>';
+            return;
+        }
+
+        container.innerHTML = tips.map(tip => `
+            <div class="alert alert-${tip.category === 'Warning' ? 'warning' : 'info'} alert-dismissible fade show" role="alert">
+                <i class="bi bi-${tip.category === 'Warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                <strong>${tip.category}:</strong> ${tip.message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * Load and display benchmark comparison
+     */
+    async loadBenchmarkComparison() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const comparison = await apiManager.getBenchmarkComparison(this.financialApp.currentHouseholdId);
+            this.displayBenchmarkComparison(comparison);
+        } catch (error) {
+            console.error('Error loading benchmark comparison:', error);
+        }
+    }
+
+    /**
+     * Display benchmark comparison chart
+     */
+    displayBenchmarkComparison(comparison) {
+        const container = document.getElementById('benchmark-comparison');
+        if (!container) return;
+
+        const { categories } = comparison;
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>You vs. Similar Households</h5>
+                </div>
+                <div class="card-body">
+                    ${categories.map(cat => `
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>${cat.categoryName}</span>
+                                <span>
+                                    <strong class="text-${cat.status === 'Above' ? 'danger' : cat.status === 'Below' ? 'success' : 'primary'}">
+                                        ${cat.userPercentage.toFixed(1)}%
+                                    </strong>
+                                    <span class="text-muted">vs ${cat.benchmarkPercentage.toFixed(1)}%</span>
+                                </span>
+                            </div>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar bg-primary" style="width: ${cat.userPercentage}%" 
+                                     title="Your spending: ${cat.userPercentage.toFixed(1)}%">
+                                    You
+                                </div>
+                            </div>
+                            <div class="progress" style="height: 6px; margin-top: 2px;">
+                                <div class="progress-bar bg-secondary" style="width: ${cat.benchmarkPercentage}%" 
+                                     title="Benchmark: ${cat.benchmarkPercentage.toFixed(1)}%"></div>
+                            </div>
+                            ${cat.message ? `<small class="text-muted">${cat.message}</small>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display quick wins
+     */
+    async loadQuickWins() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const wins = await apiManager.getQuickWins(this.financialApp.currentHouseholdId);
+            this.displayQuickWins(wins);
+        } catch (error) {
+            console.error('Error loading quick wins:', error);
+        }
+    }
+
+    /**
+     * Display quick wins
+     */
+    displayQuickWins(wins) {
+        const container = document.getElementById('quick-wins');
+        if (!container) return;
+
+        if (!wins || wins.length === 0) {
+            container.innerHTML = '<p class="text-muted">No quick wins identified yet.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="row">
+                ${wins.map(win => `
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 border-success">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="bi bi-trophy text-success me-2"></i>
+                                    ${win.title}
+                                </h6>
+                                <p class="card-text">${win.description}</p>
+                                ${win.potentialSavings ? `
+                                    <p class="text-success mb-0">
+                                        <strong>Save: ${this.formatCurrency(win.potentialSavings)}</strong>
+                                    </p>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display financial health score
+     */
+    async loadHealthScore() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const scoreData = await apiManager.getFinancialHealthScore(this.financialApp.currentHouseholdId);
+            this.displayHealthScore(scoreData);
+        } catch (error) {
+            console.error('Error loading health score:', error);
+        }
+    }
+
+    /**
+     * Display financial health score
+     */
+    displayHealthScore(scoreData) {
+        const container = document.getElementById('health-score');
+        if (!container) return;
+
+        const { score, factors } = scoreData;
+        const scoreColor = score >= 75 ? 'success' : score >= 50 ? 'warning' : 'danger';
+        const scoreLabel = score >= 75 ? 'Good' : score >= 50 ? 'Fair' : 'Needs Improvement';
+
+        container.innerHTML = `
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Financial Health Score</h5>
+                    <div class="my-4">
+                        <div class="position-relative d-inline-block">
+                            <svg width="200" height="200" class="circular-progress">
+                                <circle cx="100" cy="100" r="90" fill="none" stroke="#e9ecef" stroke-width="12"/>
+                                <circle cx="100" cy="100" r="90" fill="none" 
+                                        stroke="${scoreColor === 'success' ? '#28a745' : scoreColor === 'warning' ? '#ffc107' : '#dc3545'}" 
+                                        stroke-width="12"
+                                        stroke-dasharray="${(score / 100) * 565.48} 565.48"
+                                        stroke-linecap="round"
+                                        transform="rotate(-90 100 100)"/>
+                            </svg>
+                            <div class="position-absolute top-50 start-50 translate-middle">
+                                <h2 class="text-${scoreColor} mb-0">${score}</h2>
+                                <p class="text-muted mb-0">${scoreLabel}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-start">
+                        <h6>Score Factors:</h6>
+                        <ul class="list-unstyled">
+                            ${factors.map(factor => `
+                                <li class="mb-2">
+                                    <div class="d-flex justify-content-between">
+                                        <span>${factor.name}</span>
+                                        <span class="text-${factor.score >= 7 ? 'success' : factor.score >= 4 ? 'warning' : 'danger'}">
+                                            ${factor.score}/10
+                                        </span>
+                                    </div>
+                                    <div class="progress" style="height: 4px;">
+                                        <div class="progress-bar bg-${factor.score >= 7 ? 'success' : factor.score >= 4 ? 'warning' : 'danger'}" 
+                                             style="width: ${factor.score * 10}%"></div>
+                                    </div>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display goals dashboard
+     */
+    async loadGoalsDashboard() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const goalDashboard = await apiManager.getGoalDashboard(this.financialApp.currentHouseholdId);
+            this.displayGoalsDashboard(goalDashboard);
+        } catch (error) {
+            console.error('Error loading goals dashboard:', error);
+        }
+    }
+
+    /**
+     * Display goals dashboard
+     */
+    displayGoalsDashboard(dashboard) {
+        const container = document.getElementById('goals-dashboard');
+        if (!container) return;
+
+        const { goals, summary } = dashboard;
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bullseye me-2"></i>Goals Progress</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Total Goals</p>
+                            <h6>${summary.totalGoals}</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">On Track</p>
+                            <h6 class="text-success">${summary.onTrackCount}</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">At Risk</p>
+                            <h6 class="text-danger">${summary.atRiskCount}</h6>
+                        </div>
+                    </div>
+                    <div class="goals-list">
+                        ${goals.slice(0, 5).map(goal => `
+                            <div class="card mb-2">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <h6 class="mb-0">${goal.name}</h6>
+                                        <span class="badge bg-${goal.status === 'OnTrack' ? 'success' : goal.status === 'AtRisk' ? 'warning' : 'secondary'}">
+                                            ${goal.status}
+                                        </span>
+                                    </div>
+                                    <div class="progress mb-2" style="height: 8px;">
+                                        <div class="progress-bar bg-${goal.progressPercentage >= 75 ? 'success' : goal.progressPercentage >= 50 ? 'warning' : 'danger'}" 
+                                             style="width: ${goal.progressPercentage}%"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between small text-muted">
+                                        <span>${this.formatCurrency(goal.currentAmount)} / ${this.formatCurrency(goal.targetAmount)}</span>
+                                        <span>${goal.progressPercentage.toFixed(0)}% complete</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Initialize all dashboard enhancements
+     */
+    async initializeDashboardEnhancements() {
+        await Promise.all([
+            this.loadTopActions(),
+            this.loadFinancialTips(),
+            this.loadBenchmarkComparison(),
+            this.loadQuickWins(),
+            this.loadHealthScore(),
+            this.loadGoalsDashboard()
+        ]);
     }
 }
 

@@ -17,10 +17,18 @@ class FinancialApp {
             console.log('Starting app initialization...');
 
             const isAccountPage = window.location.pathname.includes('account.html');
+            const isOnboardingPage = window.location.pathname.includes('onboarding.html');
+
             if (isAccountPage) {
                 console.log('On account page - skipping auth checks, loading reference data only');
                 await this.loadReferenceData();
                 return; // Let account.js handle the rest
+            }
+
+            if (isOnboardingPage) {
+                console.log('On onboarding page - skipping auth checks, loading reference data only');
+                await this.loadReferenceData();
+                return; // Let onboarding.js handle the rest
             }
 
             // Check if managers are available
@@ -29,36 +37,101 @@ class FinancialApp {
             }
 
             // Check authentication state
-            let userEmail, currentHouseholdId;
+            let authToken, userEmail, currentHouseholdId, userId, isAdmin, hasCompletedOnboarding;
 
             try {
-                // Prefer session, fallback to local for userEmail
-                userEmail = sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail');
+                // Check for authentication token
+                authToken = localStorage.getItem('authToken');
+                userEmail = localStorage.getItem('userEmail');
                 currentHouseholdId = localStorage.getItem('currentHouseholdId');
+                userId = localStorage.getItem('userId');
+                isAdmin = localStorage.getItem('isAdmin') === 'True';
+                hasCompletedOnboarding = localStorage.getItem('hasCompletedOnboarding') === 'true';
             } catch (storageError) {
                 console.error('Error accessing localStorage:', storageError);
                 // Clear potentially corrupted localStorage data
                 this.clearCorruptedStorage();
+                authToken = null;
                 userEmail = null;
                 currentHouseholdId = null;
+                userId = null;
+                isAdmin = false;
+                hasCompletedOnboarding = false;
             }
 
             console.log('Authentication check:');
+            console.log('- authToken:', authToken ? 'Present' : 'Missing');
             console.log('- userEmail:', userEmail);
             console.log('- currentHouseholdId:', currentHouseholdId);
+            console.log('- userId:', userId);
+            console.log('- isAdmin:', isAdmin);
+            console.log('- hasCompletedOnboarding:', hasCompletedOnboarding);
 
-            if (!userEmail) {
-                // User not logged in, show login on index
-                console.log('User not authenticated, redirecting to login page');
-                if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
-                    window.location.href = 'index.html';
-                    return;
-                }
+            // If no token, user needs to login
+            if (!authToken) {
+                console.log('No authentication token found, showing login screen');
+                // Show login screen on current page instead of redirecting
                 uiManager.showLogin();
                 return;
             }
 
-            // Resolve household by email if missing from storage
+            // Validate token with backend
+            console.log('Validating authentication token...');
+            try {
+                const validationResult = await apiManager.validateToken(authToken);
+
+                if (!validationResult) {
+                    console.log('Token validation failed, showing login screen');
+                    this.clearAuthData();
+                    uiManager.showLogin();
+                    return;
+                }
+
+                // Update local storage with fresh data from validation
+                if (validationResult.email) {
+                    localStorage.setItem('userEmail', validationResult.email);
+                    userEmail = validationResult.email;
+                }
+                if (validationResult.currentHouseholdId) {
+                    localStorage.setItem('currentHouseholdId', String(validationResult.currentHouseholdId));
+                    currentHouseholdId = String(validationResult.currentHouseholdId);
+                }
+                if (validationResult.userId) {
+                    localStorage.setItem('userId', String(validationResult.userId));
+                    userId = String(validationResult.userId);
+                }
+                if (validationResult.isAdmin !== undefined) {
+                    localStorage.setItem('isAdmin', String(validationResult.isAdmin));
+                    isAdmin = validationResult.isAdmin;
+                }
+                if (validationResult.hasCompletedOnboarding !== undefined) {
+                    localStorage.setItem('hasCompletedOnboarding', String(validationResult.hasCompletedOnboarding));
+                    hasCompletedOnboarding = validationResult.hasCompletedOnboarding;
+                }
+
+                console.log('Token validation successful, user authenticated');
+            } catch (error) {
+                console.error('Token validation error:', error);
+                this.clearAuthData();
+                uiManager.showLogin();
+                return;
+            }
+
+            if (!userEmail) {
+                console.log('No email after token validation, showing login screen');
+                this.clearAuthData();
+                uiManager.showLogin();
+                return;
+            }
+
+            // Check if user has completed onboarding
+            if (!hasCompletedOnboarding) {
+                console.log('User has not completed onboarding, redirecting to onboarding');
+                window.location.href = 'onboarding.html';
+                return;
+            }
+
+            // Resolve household by email if missing from storage (for users who completed onboarding)
             if (!currentHouseholdId) {
                 console.log('No household in storage; attempting lookup by email');
                 try {
@@ -68,13 +141,14 @@ class FinancialApp {
                         currentHouseholdId = String(hh.id || hh.Id);
                         localStorage.setItem('currentHouseholdId', currentHouseholdId);
                     } else {
-                        // Send new users to onboarding
+                        console.log('No household found for user, redirecting to onboarding');
                         window.location.href = 'onboarding.html';
                         return;
                     }
                 } catch (err) {
-                    // Offline fallback to account setup
-                    window.location.href = 'account.html';
+                    console.error('Error looking up household:', err);
+                    // If there's an error, redirect to onboarding as a safe fallback
+                    window.location.href = 'onboarding.html';
                     return;
                 }
             }
@@ -84,23 +158,15 @@ class FinancialApp {
             try {
                 const testHouseholdData = await apiManager.loadHouseholdData(currentHouseholdId);
                 if (!testHouseholdData || !testHouseholdData.id) {
-                    console.log('Invalid household data, clearing localStorage and redirecting to login');
+                    console.log('Invalid household data, clearing localStorage and showing login screen');
                     this.clearCorruptedStorage();
-                    if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
-                        window.location.href = 'index.html';
-                        return;
-                    }
                     uiManager.showLogin();
                     return;
                 }
                 console.log('Household ID is valid, proceeding with app initialization');
             } catch (error) {
-                console.log('Error validating household ID, clearing localStorage and redirecting to login:', error.message);
+                console.log('Error validating household ID, clearing localStorage and showing login screen:', error.message);
                 this.clearCorruptedStorage();
-                if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
-                    window.location.href = 'index.html';
-                    return;
-                }
                 uiManager.showLogin();
                 return;
             }
@@ -1109,11 +1175,41 @@ if (window.financialApp) {
     console.log('Financial app not ready, will initialize managers after app initialization');
 }
 
-// Navigation functions
-window.showDashboard = () => window.location.href = 'dashboard.html';
-window.showBudgetSection = () => window.location.href = 'budget.html';
-window.showModulesSection = () => window.location.href = 'modules.html';
+// Navigation functions - now using single-page application pattern
+window.showDashboard = () => {
+    if (window.uiManager) {
+        window.uiManager.showSection('dashboard');
+        if (window.financialApp && window.financialApp.showDashboard) {
+            window.financialApp.showDashboard();
+        }
+    }
+};
+
+window.showBudgetSection = () => {
+    if (window.uiManager) {
+        window.uiManager.showSection('budget');
+        if (window.financialApp && window.financialApp.showBudgetSection) {
+            window.financialApp.showBudgetSection();
+        }
+    }
+};
+
+window.showModulesSection = () => {
+    if (window.uiManager) {
+        window.uiManager.showSection('modules');
+        if (window.financialApp && window.financialApp.showModulesSection) {
+            window.financialApp.showModulesSection();
+        }
+    }
+};
 window.addTransaction = () => financialApp.addTransaction();
 window.viewReports = () => financialApp.viewReports();
 window.toggleCategoryView = () => financialApp.toggleCategoryView();
 window.adjustEmergencyFund = () => financialApp.adjustEmergencyFund();
+window.clearAuthData = () => {
+    if (window.uiManager) {
+        window.uiManager.clearAuthData();
+    } else if (window.financialApp) {
+        window.financialApp.clearAuthData();
+    }
+};

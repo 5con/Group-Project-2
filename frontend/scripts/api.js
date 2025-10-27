@@ -116,6 +116,91 @@ class ApiManager {
         }
     }
 
+    async login(email, password) {
+        try {
+            console.log('Attempting login for:', email);
+
+            const url = `${this.baseUrl}/auth/login`;
+            console.log('Making login request to:', url);
+
+            const response = await fetch(url, {
+                method: 'POST',
+                mode: 'cors',
+                credentials: 'omit',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            console.log('Login response status:', response.status);
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Login successful:', result);
+
+                // Store authentication data
+                localStorage.setItem('userEmail', result.email);
+                localStorage.setItem('authToken', result.token);
+                localStorage.setItem('currentHouseholdId', String(result.currentHouseholdId || ''));
+                localStorage.setItem('userId', String(result.userId));
+                localStorage.setItem('isAdmin', String(result.isAdmin));
+                localStorage.setItem('hasCompletedOnboarding', String(result.hasCompletedOnboarding || false));
+
+                return result;
+            } else {
+                let errorText = 'Unknown error';
+                try {
+                    errorText = await response.text();
+                    console.log('Login error response:', errorText);
+                } catch (e) {
+                    console.warn('Could not read login error response');
+                }
+                throw new Error(`Login failed (${response.status}): ${errorText}`);
+            }
+        } catch (error) {
+            console.error('ERROR during login:', error);
+            console.error('Error details:', {
+                message: error.message,
+                stack: error.stack,
+                email: email,
+                baseUrl: this.baseUrl
+            });
+            throw error;
+        }
+    }
+
+    async validateToken(token) {
+        try {
+            console.log('Validating token...');
+
+            const url = `${this.baseUrl}/auth/validate`;
+            console.log('Making token validation request to:', url);
+
+            const response = await fetch(url, {
+                method: 'POST',
+                mode: 'cors',
+                credentials: 'omit',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ token })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Token validation successful:', result);
+                return result;
+            } else {
+                console.log('Token validation failed with status:', response.status);
+                return null;
+            }
+        } catch (error) {
+            console.error('ERROR validating token:', error);
+            return null;
+        }
+    }
+
     async loadHouseholdData(householdId) {
         try {
             const response = await fetch(`${this.baseUrl}/onboarding/household/${householdId}`, {
@@ -316,6 +401,335 @@ class ApiManager {
             console.error('Error generating reports:', error);
             throw error;
         }
+    }
+
+    // ============= GOALS API =============
+    async createGoal(goalData) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Goal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(goalData)
+            });
+            if (response.ok) return await response.json();
+            throw new Error('Failed to create goal');
+        } catch (error) {
+            console.error('Error creating goal:', error);
+            throw error;
+        }
+    }
+
+    async loadGoals(householdId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Goal/household/${householdId}`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load goals');
+        } catch (error) {
+            console.error('Error loading goals:', error);
+            throw error;
+        }
+    }
+
+    async updateGoal(goalId, updateData) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Goal/${goalId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updateData)
+            });
+            if (response.ok) return await response.json();
+            throw new Error('Failed to update goal');
+        } catch (error) {
+            console.error('Error updating goal:', error);
+            throw error;
+        }
+    }
+
+    async deleteGoal(goalId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Goal/${goalId}`, { method: 'DELETE' });
+            if (response.ok) return true;
+            throw new Error('Failed to delete goal');
+        } catch (error) {
+            console.error('Error deleting goal:', error);
+            throw error;
+        }
+    }
+
+    async getGoalDashboard(householdId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Goal/household/${householdId}/dashboard`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load goal dashboard');
+        } catch (error) {
+            console.error('Error loading goal dashboard:', error);
+            throw error;
+        }
+    }
+
+    // ============= BUDGET PROJECTIONS API =============
+    async getSnowballProjection(householdId, extraMonthlyPayment) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Budget/household/${householdId}/debt/snowball?extraMonthlyPayment=${extraMonthlyPayment}`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load snowball projection');
+        } catch (error) {
+            console.error('Error loading snowball projection:', error);
+            throw error;
+        }
+    }
+
+    async getAvalancheProjection(householdId, extraMonthlyPayment) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Budget/household/${householdId}/debt/avalanche?extraMonthlyPayment=${extraMonthlyPayment}`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load avalanche projection');
+        } catch (error) {
+            console.error('Error loading avalanche projection:', error);
+            throw error;
+        }
+    }
+
+    async compareDebtMethods(householdId, extraMonthlyPayment) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Budget/household/${householdId}/debt/compare?extraMonthlyPayment=${extraMonthlyPayment}`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to compare debt methods');
+        } catch (error) {
+            console.error('Error comparing debt methods:', error);
+            throw error;
+        }
+    }
+
+    async get12MonthProjection(householdId, startMonth) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Budget/household/${householdId}/projection-12month?startMonth=${startMonth}`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load 12-month projection');
+        } catch (error) {
+            console.error('Error loading 12-month projection:', error);
+            throw error;
+        }
+    }
+
+    async validateBudget(householdId, categoryAmounts) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Budget/validate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ householdId, categoryAmounts })
+            });
+            if (response.ok) return await response.json();
+            throw new Error('Failed to validate budget');
+        } catch (error) {
+            console.error('Error validating budget:', error);
+            throw error;
+        }
+    }
+
+    async checkGuardrails(householdId, categoryAmounts) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Budget/guardrails`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ householdId, categoryAmounts })
+            });
+            if (response.ok) return await response.json();
+            throw new Error('Failed to check guardrails');
+        } catch (error) {
+            console.error('Error checking guardrails:', error);
+            throw error;
+        }
+    }
+
+    async recalculateBudgetLive(householdId, categoryAmounts) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Budget/recalculate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ householdId, categoryAmounts })
+            });
+            if (response.ok) return await response.json();
+            throw new Error('Failed to recalculate budget');
+        } catch (error) {
+            console.error('Error recalculating budget:', error);
+            throw error;
+        }
+    }
+
+    // ============= DASHBOARD/RECOMMENDATIONS API =============
+    async getTopActions(householdId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Dashboard/household/${householdId}/top-actions`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load top actions');
+        } catch (error) {
+            console.error('Error loading top actions:', error);
+            throw error;
+        }
+    }
+
+    async getFinancialTips(householdId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Dashboard/household/${householdId}/tips`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load financial tips');
+        } catch (error) {
+            console.error('Error loading financial tips:', error);
+            throw error;
+        }
+    }
+
+    async getBenchmarkComparison(householdId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Dashboard/household/${householdId}/benchmark`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load benchmark comparison');
+        } catch (error) {
+            console.error('Error loading benchmark comparison:', error);
+            throw error;
+        }
+    }
+
+    async getQuickWins(householdId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Dashboard/household/${householdId}/quick-wins`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load quick wins');
+        } catch (error) {
+            console.error('Error loading quick wins:', error);
+            throw error;
+        }
+    }
+
+    async getFinancialHealthScore(householdId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/Dashboard/household/${householdId}/health-score`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load health score');
+        } catch (error) {
+            console.error('Error loading health score:', error);
+            throw error;
+        }
+    }
+
+    // ============= MODULE PROGRESS API =============
+    async getUserLearningProgress(userId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/ReferenceData/users/${userId}/learning-progress`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load learning progress');
+        } catch (error) {
+            console.error('Error loading learning progress:', error);
+            throw error;
+        }
+    }
+
+    async getModulesWithProgress(userId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/ReferenceData/financial-modules/progress?userId=${userId}`);
+            if (response.ok) return await response.json();
+            throw new Error('Failed to load modules with progress');
+        } catch (error) {
+            console.error('Error loading modules with progress:', error);
+            throw error;
+        }
+    }
+
+    // ============= EXPORT API =============
+    async exportTransactions(householdId, format = 'csv', startDate = null, endDate = null) {
+        try {
+            let url = `${this.baseUrl}/Export/transactions?householdId=${householdId}&format=${format}`;
+            if (startDate) url += `&startDate=${startDate}`;
+            if (endDate) url += `&endDate=${endDate}`;
+
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                this._downloadFile(blob, `transactions_${householdId}.${format}`);
+                return true;
+            }
+            throw new Error('Failed to export transactions');
+        } catch (error) {
+            console.error('Error exporting transactions:', error);
+            throw error;
+        }
+    }
+
+    async exportBudget(householdId, month, format = 'csv') {
+        try {
+            const url = `${this.baseUrl}/Export/budget?householdId=${householdId}&month=${month}&format=${format}`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                this._downloadFile(blob, `budget_${householdId}_${month}.${format}`);
+                return true;
+            }
+            throw new Error('Failed to export budget');
+        } catch (error) {
+            console.error('Error exporting budget:', error);
+            throw error;
+        }
+    }
+
+    async exportBudgetById(budgetId, format = 'csv') {
+        try {
+            const url = `${this.baseUrl}/Export/budget/${budgetId}/csv`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                this._downloadFile(blob, `budget_${budgetId}_${new Date().toISOString().split('T')[0]}.csv`);
+                return true;
+            }
+            throw new Error('Failed to export budget');
+        } catch (error) {
+            console.error('Error exporting budget:', error);
+            throw error;
+        }
+    }
+
+    async exportHouseholdData(householdId, format = 'json') {
+        try {
+            const url = `${this.baseUrl}/Export/household?householdId=${householdId}&format=${format}`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                this._downloadFile(blob, `household_${householdId}.${format}`);
+                return true;
+            }
+            throw new Error('Failed to export household data');
+        } catch (error) {
+            console.error('Error exporting household data:', error);
+            throw error;
+        }
+    }
+
+    async exportGoals(householdId, format = 'csv') {
+        try {
+            const url = `${this.baseUrl}/Export/goals?householdId=${householdId}&format=${format}`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                this._downloadFile(blob, `goals_${householdId}.${format}`);
+                return true;
+            }
+            throw new Error('Failed to export goals');
+        } catch (error) {
+            console.error('Error exporting goals:', error);
+            throw error;
+        }
+    }
+
+    _downloadFile(blob, filename) {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
     }
 
     async updateHousehold(householdId, updateData) {

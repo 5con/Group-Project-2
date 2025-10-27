@@ -564,6 +564,331 @@ class BudgetManager {
             currency: 'USD'
         }).format(amount);
     }
+
+    // ============= INTERACTIVE BUDGET EDITOR FEATURES =============
+    
+    /**
+     * Debounced live recalculation for budget changes
+     */
+    async recalculateBudgetLive() {
+        if (!this.financialApp.currentHouseholdId || !this.currentBudget) {
+            console.warn('Cannot recalculate without household and budget');
+            return;
+        }
+
+        try {
+            // Gather current category amounts from DOM
+            const categoryAmounts = {};
+            const categoryInputs = document.querySelectorAll('[data-category-id]');
+            
+            categoryInputs.forEach(input => {
+                const categoryId = parseInt(input.dataset.categoryId);
+                const amount = parseFloat(input.value) || 0;
+                categoryAmounts[categoryId] = amount;
+            });
+
+            // Call API for live recalculation
+            const result = await apiManager.recalculateBudgetLive(
+                this.financialApp.currentHouseholdId,
+                categoryAmounts
+            );
+
+            // Update UI with validation results
+            this.displayRecalculationResults(result);
+        } catch (error) {
+            console.error('Error during live recalculation:', error);
+        }
+    }
+
+    /**
+     * Display recalculation results including validation and projections
+     */
+    displayRecalculationResults(result) {
+        const container = document.getElementById('budget-live-results');
+        if (!container) return;
+
+        const { validation, financial, debtProjections } = result;
+
+        let html = `
+            <div class="card mb-3">
+                <div class="card-header bg-${financial.surplus >= 0 ? 'success' : 'danger'} text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-calculator me-2"></i>
+                        ${financial.surplus >= 0 ? 'Surplus' : 'Deficit'}: ${this.formatCurrency(Math.abs(financial.surplus))}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Net Income</p>
+                            <h6>${this.formatCurrency(financial.netIncome)}</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Total Budgeted</p>
+                            <h6>${this.formatCurrency(financial.totalBudgeted)}</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Balance</p>
+                            <h6 class="text-${financial.surplus >= 0 ? 'success' : 'danger'}">
+                                ${this.formatCurrency(financial.surplus)}
+                            </h6>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Needs</p>
+                            <div class="d-flex justify-content-between">
+                                <span>${this.formatCurrency(financial.totalNeeds)}</span>
+                                <span class="text-muted">${financial.needsPercentage.toFixed(1)}%</span>
+                            </div>
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar bg-success" style="width: ${financial.needsPercentage}%"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Wants</p>
+                            <div class="d-flex justify-content-between">
+                                <span>${this.formatCurrency(financial.totalWants)}</span>
+                                <span class="text-muted">${financial.wantsPercentage.toFixed(1)}%</span>
+                            </div>
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar bg-warning" style="width: ${financial.wantsPercentage}%"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Savings</p>
+                            <div class="d-flex justify-content-between">
+                                <span>${this.formatCurrency(financial.totalSavings)}</span>
+                                <span class="text-muted">${financial.savingsPercentage.toFixed(1)}%</span>
+                            </div>
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar bg-primary" style="width: ${financial.savingsPercentage}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add validation warnings
+        if (validation && validation.violations && validation.violations.length > 0) {
+            html += `
+                <div class="alert alert-warning">
+                    <h6><i class="bi bi-exclamation-triangle me-2"></i>Guardrail Warnings</h6>
+                    <ul class="mb-0">
+                        ${validation.violations.map(v => `
+                            <li>${v.categoryName}: ${v.message} (${v.actualPercentage.toFixed(1)}% vs ${v.benchmarkPercentage.toFixed(1)}%)</li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Add debt projection summary
+        if (debtProjections && debtProjections.snowball) {
+            html += `
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="bi bi-graph-down me-2"></i>Debt Payoff Projection</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p class="mb-1 text-muted">Snowball Method</p>
+                                <p class="mb-0">
+                                    <strong>${debtProjections.snowball.monthsToPayoff}</strong> months
+                                    | Interest: ${this.formatCurrency(debtProjections.snowball.totalInterestPaid)}
+                                </p>
+                            </div>
+                            ${debtProjections.avalanche ? `
+                                <div class="col-md-6">
+                                    <p class="mb-1 text-muted">Avalanche Method</p>
+                                    <p class="mb-0">
+                                        <strong>${debtProjections.avalanche.monthsToPayoff}</strong> months
+                                        | Interest: ${this.formatCurrency(debtProjections.avalanche.totalInterestPaid)}
+                                    </p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+    }
+
+    /**
+     * Setup debounced listeners for live recalculation
+     */
+    setupLiveRecalculation() {
+        let debounceTimer;
+        const categoryInputs = document.querySelectorAll('[data-category-id]');
+        
+        categoryInputs.forEach(input => {
+            input.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    this.recalculateBudgetLive();
+                }, 500); // 500ms debounce
+            });
+        });
+    }
+
+    /**
+     * Load and display debt method comparison
+     */
+    async loadDebtComparison() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const comparison = await apiManager.compareDebtMethods(
+                this.financialApp.currentHouseholdId,
+                0 // Will use budget surplus
+            );
+
+            this.displayDebtComparison(comparison);
+        } catch (error) {
+            console.error('Error loading debt comparison:', error);
+        }
+    }
+
+    /**
+     * Display debt method comparison
+     */
+    displayDebtComparison(comparison) {
+        const container = document.getElementById('debt-comparison');
+        if (!container) return;
+
+        const { snowball, avalanche, recommendation } = comparison;
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-graph-down me-2"></i>Debt Payoff Strategy Comparison</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Method</th>
+                                    <th>Months to Payoff</th>
+                                    <th>Total Interest</th>
+                                    <th>Interest Saved</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="${recommendation.method === 'Snowball' ? 'table-success' : ''}">
+                                    <td><strong>Snowball</strong> ${recommendation.method === 'Snowball' ? '<span class="badge bg-success">Recommended</span>' : ''}</td>
+                                    <td>${snowball.monthsToPayoff}</td>
+                                    <td>${this.formatCurrency(snowball.totalInterestPaid)}</td>
+                                    <td>${this.formatCurrency(snowball.interestSavedVsMinimums)}</td>
+                                </tr>
+                                <tr class="${recommendation.method === 'Avalanche' ? 'table-success' : ''}">
+                                    <td><strong>Avalanche</strong> ${recommendation.method === 'Avalanche' ? '<span class="badge bg-success">Recommended</span>' : ''}</td>
+                                    <td>${avalanche.monthsToPayoff}</td>
+                                    <td>${this.formatCurrency(avalanche.totalInterestPaid)}</td>
+                                    <td>${this.formatCurrency(avalanche.interestSavedVsMinimums)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="alert alert-info mb-0">
+                        <strong>Recommendation:</strong> ${recommendation.reason}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display 12-month projection
+     */
+    async load12MonthProjection() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const currentDate = new Date();
+            const startMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            const projection = await apiManager.get12MonthProjection(
+                this.financialApp.currentHouseholdId,
+                startMonth
+            );
+
+            this.display12MonthProjection(projection);
+        } catch (error) {
+            console.error('Error loading 12-month projection:', error);
+        }
+    }
+
+    /**
+     * Display 12-month projection chart
+     */
+    display12MonthProjection(projection) {
+        const container = document.getElementById('projection-12month');
+        if (!container) return;
+
+        const { months, summary } = projection;
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>12-Month Financial Projection</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <p class="mb-1 text-muted">Total Debt Reduction</p>
+                            <h6>${this.formatCurrency(summary.totalDebtReduction)}</h6>
+                        </div>
+                        <div class="col-md-3">
+                            <p class="mb-1 text-muted">Total Savings Growth</p>
+                            <h6>${this.formatCurrency(summary.totalSavingsGrowth)}</h6>
+                        </div>
+                        <div class="col-md-3">
+                            <p class="mb-1 text-muted">Debts Paid Off</p>
+                            <h6>${summary.debtsPaidOff}</h6>
+                        </div>
+                        <div class="col-md-3">
+                            <p class="mb-1 text-muted">Goals Completed</p>
+                            <h6>${summary.goalsCompleted}</h6>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Surplus</th>
+                                    <th>Debt Balance</th>
+                                    <th>Savings</th>
+                                    <th>EF Progress</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${months.slice(0, 12).map(m => `
+                                    <tr>
+                                        <td>${m.month}</td>
+                                        <td class="text-${m.surplus >= 0 ? 'success' : 'danger'}">
+                                            ${this.formatCurrency(m.surplus)}
+                                        </td>
+                                        <td>${this.formatCurrency(m.totalDebtBalance)}</td>
+                                        <td>${this.formatCurrency(m.totalSavingsBalance)}</td>
+                                        <td>${m.emergencyFundPercentage.toFixed(0)}%</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 }
 
 // Create global budget manager instance

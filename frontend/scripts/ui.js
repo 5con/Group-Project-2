@@ -15,6 +15,7 @@ class UIManager {
     showLogin() {
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
+        const mainNavbar = document.getElementById('main-navbar');
 
         if (!loginSection) {
             console.error('Login section element not found in DOM');
@@ -26,48 +27,64 @@ class UIManager {
             return;
         }
 
+        // Show login section and hide main content and navigation
         loginSection.style.display = 'block';
         mainContent.classList.add('d-none');
+        if (mainNavbar) {
+            mainNavbar.classList.add('d-none');
+        }
 
         // Set up login event listeners
         this.setupLoginEventListeners();
     }
 
     setupLoginEventListeners() {
-        // Handle login form submission (demo mode - no auth required)
+        // Handle login form submission with proper authentication
         const form = document.getElementById('login-form');
         if (!form) return;
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
 
             if (!email) {
                 this.showAlert('Please enter an email address', 'danger');
                 return;
             }
 
-            // Store email in sessionStorage so login is required each session
-            try {
-                sessionStorage.setItem('userEmail', email);
-            } catch (err) {
-                // Fallback to localStorage if sessionStorage unavailable
-                localStorage.setItem('userEmail', email);
+            if (!password) {
+                this.showAlert('Please enter a password', 'danger');
+                return;
             }
 
-            // Determine destination: existing household -> dashboard, else -> onboarding
             try {
-                const res = await fetch(`http://localhost:5267/api/onboarding/household/by-email/${encodeURIComponent(email)}`);
-                if (res.ok) {
-                    const hh = await res.json();
-                    const id = hh.id ?? hh.Id;
-                    if (id) localStorage.setItem('currentHouseholdId', String(id));
-                    window.location.href = 'dashboard.html';
+                console.log('Attempting login with email:', email);
+
+                // Use the API manager's login method
+                const response = await window.apiManager.login(email, password);
+
+                if (response && response.token) {
+                    console.log('Login successful, showing main application...');
+
+                    // Show success message
+                    this.showSuccessAlert('Login successful! Loading your dashboard...');
+
+                    // Show main application content instead of redirecting
+                    this.showMainApp();
                 } else {
-                    window.location.href = 'onboarding.html';
+                    throw new Error('Invalid response from server');
                 }
-            } catch (err) {
-                // Backend not reachable: fall back to account setup
-                window.location.href = 'account.html';
+            } catch (error) {
+                console.error('Login error:', error);
+
+                let errorMessage = 'Login failed. Please check your credentials and try again.';
+                if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                    errorMessage = 'Invalid email or password. Please try again.';
+                } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                    errorMessage = 'Network error. Please check your connection and try again.';
+                }
+
+                this.showAlert(errorMessage, 'danger');
             }
         });
     }
@@ -76,6 +93,7 @@ class UIManager {
     showMainApp() {
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
+        const mainNavbar = document.getElementById('main-navbar');
 
         if (!loginSection) {
             console.error('Login section element not found in DOM');
@@ -87,14 +105,25 @@ class UIManager {
             return;
         }
 
+        // Hide login section and show main content and navigation
         loginSection.style.display = 'none';
         mainContent.classList.remove('d-none');
+        if (mainNavbar) {
+            mainNavbar.classList.remove('d-none');
+        }
 
         // Populate user email in onboarding form if needed
         this.populateUserEmail();
 
         // Set up navigation event listeners
         this.setupNavigation();
+
+        // Initialize dashboard after showing main app
+        if (window.financialApp) {
+            // Show dashboard section and load data
+            this.showSection('dashboard');
+            window.financialApp.loadBudgetAndShowDashboard();
+        }
     }
 
     populateUserEmail() {
@@ -102,16 +131,14 @@ class UIManager {
         const userEmailDisplay = document.getElementById('user-email-display');
 
         if (emailInput && userEmailDisplay) {
-            // Only set demo email if field is empty and we're not on account page during setup
+            // Only set stored email if field is empty and we're not on account page during setup
             if (!emailInput.value) {
                 const storedEmail = localStorage.getItem('userEmail');
                 if (storedEmail) {
                     emailInput.value = storedEmail;
                     userEmailDisplay.textContent = storedEmail;
-                } else {
-                    emailInput.value = 'demo@example.com';
-                    userEmailDisplay.textContent = 'demo@example.com';
                 }
+                // Don't set demo email - leave fields empty for new users
             }
         }
     }
@@ -235,6 +262,17 @@ class UIManager {
                 }
             });
         }
+
+        // Logout handler
+        const navLogout = document.getElementById('nav-logout');
+        if (navLogout) {
+            navLogout.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (confirm('Are you sure you want to logout?')) {
+                    this.clearAuthData();
+                }
+            });
+        }
     }
 
 
@@ -242,7 +280,124 @@ class UIManager {
         // Clear all data and reset to clean state
         localStorage.clear(); // Clear everything including completed modules
         sessionStorage.clear(); // Clear session data too
+
+        // Hide navigation and show login
+        const mainNavbar = document.getElementById('main-navbar');
+        if (mainNavbar) {
+            mainNavbar.classList.add('d-none');
+        }
+
         this.showLogin(); // Show login page after clearing data
+    }
+
+    // ============= EXPORT FUNCTIONALITY =============
+    
+    /**
+     * Setup export buttons
+     */
+    setupExportButtons() {
+        // Export budget button
+        const exportBudgetBtn = document.getElementById('export-budget-btn');
+        if (exportBudgetBtn) {
+            exportBudgetBtn.addEventListener('click', () => this.exportBudget());
+        }
+
+        // Export household button
+        const exportHouseholdBtn = document.getElementById('export-household-btn');
+        if (exportHouseholdBtn) {
+            exportHouseholdBtn.addEventListener('click', () => this.exportHousehold());
+        }
+
+        // Export goals button
+        const exportGoalsBtn = document.getElementById('export-goals-btn');
+        if (exportGoalsBtn) {
+            exportGoalsBtn.addEventListener('click', () => this.exportGoals());
+        }
+
+        // Export transactions button
+        const exportTransactionsBtn = document.getElementById('export-transactions-btn');
+        if (exportTransactionsBtn) {
+            exportTransactionsBtn.addEventListener('click', () => this.exportTransactions());
+        }
+    }
+
+    /**
+     * Export budget to CSV
+     */
+    async exportBudget() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            const currentDate = new Date();
+            const month = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            await apiManager.exportBudget(householdId, month, 'csv');
+            this.showSuccessAlert('Budget exported successfully!');
+        } catch (error) {
+            console.error('Error exporting budget:', error);
+            this.showErrorAlert('Failed to export budget');
+        }
+    }
+
+    /**
+     * Export household data to JSON
+     */
+    async exportHousehold() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            await apiManager.exportHouseholdData(householdId, 'json');
+            this.showSuccessAlert('Household data exported successfully!');
+        } catch (error) {
+            console.error('Error exporting household:', error);
+            this.showErrorAlert('Failed to export household data');
+        }
+    }
+
+    /**
+     * Export goals to CSV
+     */
+    async exportGoals() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            await apiManager.exportGoals(householdId, 'csv');
+            this.showSuccessAlert('Goals exported successfully!');
+        } catch (error) {
+            console.error('Error exporting goals:', error);
+            this.showErrorAlert('Failed to export goals');
+        }
+    }
+
+    /**
+     * Export transactions to CSV
+     */
+    async exportTransactions() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            await apiManager.exportTransactions(householdId, 'csv');
+            this.showSuccessAlert('Transactions exported successfully!');
+        } catch (error) {
+            console.error('Error exporting transactions:', error);
+            this.showErrorAlert('Failed to export transactions');
+        }
     }
 
 }
@@ -257,10 +412,7 @@ if (typeof window.UIManager === 'undefined') {
     window.UIManager = UIManager;
 }
 
-// Expose utility functions globally for debugging/testing if they don't exist
-if (typeof window.clearAuthData === 'undefined') {
-    window.clearAuthData = () => window.uiManager.clearAuthData();
-}
+// clearAuthData function is now defined in app.js
 
 // Add a global reset function for troubleshooting
 if (typeof window.resetApp === 'undefined') {

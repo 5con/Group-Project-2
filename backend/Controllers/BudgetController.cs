@@ -1,24 +1,40 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using backend.Repositories;
+using backend.Services;
+using backend.DTOs;
+using backend.Models;
 
 namespace backend.Controllers;
 
+/// <summary>
+/// Controller for budget generation and management.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class BudgetController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly IBudgetRepository _budgetRepository;
+    private readonly IHouseholdRepository _householdRepository;
+    private readonly IReferenceDataRepository _referenceDataRepository;
+    private readonly IBudgetService _budgetService;
 
-    public BudgetController(AppDbContext context)
+    public BudgetController(
+        IBudgetRepository budgetRepository,
+        IHouseholdRepository householdRepository,
+        IReferenceDataRepository referenceDataRepository,
+        IBudgetService budgetService)
     {
-        _context = context;
+        _budgetRepository = budgetRepository ?? throw new ArgumentNullException(nameof(budgetRepository));
+        _householdRepository = householdRepository ?? throw new ArgumentNullException(nameof(householdRepository));
+        _referenceDataRepository = referenceDataRepository ?? throw new ArgumentNullException(nameof(referenceDataRepository));
+        _budgetService = budgetService ?? throw new ArgumentNullException(nameof(budgetService));
     }
 
     public class BudgetGenerationRequest
     {
         public int HouseholdId { get; set; }
-        public string Methodology { get; set; } = "50/30/20"; // 50/30/20, zero_based, envelope
-        public int Month { get; set; } // Month number (1-12)
+        public string Methodology { get; set; } = "50/30/20";
+        public int Month { get; set; }
         public int Year { get; set; }
     }
 
@@ -28,416 +44,443 @@ public class BudgetController : ControllerBase
         public string Notes { get; set; } = string.Empty;
     }
 
+    /// <summary>
+    /// Generates a new budget for a household.
+    /// </summary>
     [HttpPost("generate")]
     public async Task<IActionResult> GenerateBudget([FromBody] BudgetGenerationRequest request)
     {
-        var household = await _context.Households
-            .Include(h => h.Incomes)
-            .Include(h => h.Expenses)
-            .Include(h => h.Debts)
-            .Include(h => h.Goals)
-            .FirstOrDefaultAsync(h => h.Id == request.HouseholdId);
-
-        if (household == null)
+        try
         {
-            return NotFound($"Household {request.HouseholdId} not found");
-        }
+            var budgetResponse = await _budgetService.GenerateBudgetAsync(
+                request.HouseholdId,
+                request.Methodology,
+                request.Month,
+                request.Year);
 
-        // Get state parameters for tax and COLA calculations
-        var stateParam = await _context.StateParams
-            .FirstOrDefaultAsync(sp => sp.State == household.State);
+            // Generate debt snowball projection if household has debts
+            var debts = await _householdRepository.GetDebtsAsync(request.HouseholdId);
+            DebtSnowballProjection? snowballProjection = null;
 
-        if (stateParam == null)
-        {
-            return BadRequest($"State parameters not found for {household.State}");
-        }
-
-        // Calculate total monthly income
-        var totalMonthlyIncome = household.Incomes
-            .Select(income => ConvertToMonthlyAmount(income.GrossAmount, income.Cadence))
-            .Sum();
-
-        // Calculate estimated net income (after simple tax)
-        var estimatedTax = totalMonthlyIncome * stateParam.EstEffectiveTaxRate;
-        var netIncome = totalMonthlyIncome - estimatedTax;
-
-        // Generate budget based on methodology
-        var budgetItems = new List<BudgetItem>();
-        var budgetDate = new DateTime(request.Year, request.Month, 1);
-
-        if (request.Methodology == "50/30/20")
-        {
-            budgetItems = Generate503020Budget(netIncome, household, stateParam);
-        }
-        else if (request.Methodology == "zero_based")
-        {
-            budgetItems = GenerateZeroBasedBudget(netIncome, household, stateParam);
-        }
-        else if (request.Methodology == "envelope")
-        {
-            budgetItems = GenerateEnvelopeBudget(netIncome, household, stateParam);
-        }
-
-        // Create budget record
-        var budget = new Budget
-        {
-            HouseholdId = request.HouseholdId,
-            Methodology = request.Methodology,
-            Month = budgetDate,
-            Notes = "Auto-generated budget"
-        };
-
-        _context.Budgets.Add(budget);
-        await _context.SaveChangesAsync();
-
-        // Add budget items
-        foreach (var item in budgetItems)
-        {
-            item.BudgetId = budget.Id;
-        }
-
-        _context.BudgetItems.AddRange(budgetItems);
-        await _context.SaveChangesAsync();
-
-        // Generate debt snowball projection
-        var snowballProjection = GenerateDebtSnowballProjection(household, netIncome);
-
-        // Reload full budget with categories populated for client grouping
-        var full = await _context.Budgets
-            .Include(b => b.BudgetItems)
-                .ThenInclude(bi => bi.Category)
-            .FirstAsync(b => b.Id == budget.Id);
-
-        return Ok(new
-        {
-            budget = full,
-            budgetItems = full.BudgetItems.OrderBy(bi => bi.Category.Name),
-            snowballProjection = snowballProjection,
-            summary = new
+            if (debts.Any())
             {
-                grossIncome = totalMonthlyIncome,
-                estimatedTax = estimatedTax,
-                netIncome = netIncome,
-                totalBudgeted = full.BudgetItems.Sum(bi => bi.PlannedAmount)
+                var surplus = budgetResponse.Summary.NetIncome - budgetResponse.Summary.TotalBudgeted;
+                if (surplus > 0)
+                {
+                    snowballProjection = await _budgetService.GenerateDebtSnowballProjectionAsync(
+                        request.HouseholdId,
+                        surplus);
+                }
             }
-        });
+
+            return Ok(new
+            {
+                budget = budgetResponse,
+                snowballProjection = snowballProjection,
+                summary = budgetResponse.Summary
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
+    /// <summary>
+    /// Gets a budget by ID with all items.
+    /// </summary>
     [HttpGet("{budgetId}")]
     public async Task<IActionResult> GetBudget(int budgetId)
     {
-        var budget = await _context.Budgets
-            .Include(b => b.BudgetItems)
-                .ThenInclude(bi => bi.Category)
-            .FirstOrDefaultAsync(b => b.Id == budgetId);
-
+        var budget = await _budgetRepository.GetByIdAsync(budgetId);
         if (budget == null)
         {
             return NotFound($"Budget {budgetId} not found");
         }
 
-        return Ok(budget);
+        var budgetItems = await _budgetRepository.GetBudgetItemsAsync(budgetId);
+        var categories = await _referenceDataRepository.GetAllCategoriesAsync();
+        var categoryDict = categories.ToDictionary(c => c.Id);
+
+        var response = new BudgetResponse
+        {
+            Id = budget.Id,
+            HouseholdId = budget.HouseholdId,
+            Methodology = budget.Methodology,
+            Month = budget.Month,
+            Notes = budget.Notes,
+            BudgetItems = budgetItems.Select(bi => new BudgetItemDto
+            {
+                Id = bi.Id,
+                BudgetId = bi.BudgetId,
+                CategoryId = bi.CategoryId,
+                CategoryName = categoryDict.ContainsKey(bi.CategoryId) ? categoryDict[bi.CategoryId].Name : "Unknown",
+                IsNeed = categoryDict.ContainsKey(bi.CategoryId) && categoryDict[bi.CategoryId].IsNeed,
+                PlannedAmount = bi.PlannedAmount
+            }).ToList(),
+            Summary = new BudgetSummary
+            {
+                TotalBudgeted = budgetItems.Sum(bi => bi.PlannedAmount)
+            }
+        };
+
+        // Calculate summary breakdowns
+        response.Summary.TotalNeeds = response.BudgetItems
+            .Where(bi => bi.IsNeed)
+            .Sum(bi => bi.PlannedAmount);
+
+        var savingsKeywords = new[] { "Debt", "Emergency", "Sinking", "Retirement" };
+        response.Summary.TotalSavings = response.BudgetItems
+            .Where(bi => !bi.IsNeed && savingsKeywords.Any(kw => bi.CategoryName.Contains(kw)))
+            .Sum(bi => bi.PlannedAmount);
+
+        response.Summary.TotalWants = response.Summary.TotalBudgeted
+            - response.Summary.TotalNeeds
+            - response.Summary.TotalSavings;
+
+        return Ok(response);
     }
 
+    /// <summary>
+    /// Gets all budgets for a household.
+    /// </summary>
     [HttpGet("household/{householdId}")]
-    public async Task<IActionResult> GetHouseholdBudgets(int householdId, int? year = null)
+    public async Task<IActionResult> GetHouseholdBudgets(int householdId, [FromQuery] int? year = null)
     {
-        var query = _context.Budgets
-            .Where(b => b.HouseholdId == householdId);
+        var budgets = await _budgetRepository.GetByHouseholdIdAsync(householdId, year);
+        var categories = await _referenceDataRepository.GetAllCategoriesAsync();
+        var categoryDict = categories.ToDictionary(c => c.Id);
 
-        if (year.HasValue)
+        var responses = new List<BudgetResponse>();
+        foreach (var budget in budgets)
         {
-            query = query.Where(b => b.Month.Year == year.Value);
+            var budgetItems = await _budgetRepository.GetBudgetItemsAsync(budget.Id);
+
+            responses.Add(new BudgetResponse
+            {
+                Id = budget.Id,
+                HouseholdId = budget.HouseholdId,
+                Methodology = budget.Methodology,
+                Month = budget.Month,
+                Notes = budget.Notes,
+                BudgetItems = budgetItems.Select(bi => new BudgetItemDto
+                {
+                    Id = bi.Id,
+                    BudgetId = bi.BudgetId,
+                    CategoryId = bi.CategoryId,
+                    CategoryName = categoryDict.ContainsKey(bi.CategoryId) ? categoryDict[bi.CategoryId].Name : "Unknown",
+                    IsNeed = categoryDict.ContainsKey(bi.CategoryId) && categoryDict[bi.CategoryId].IsNeed,
+                    PlannedAmount = bi.PlannedAmount
+                }).ToList(),
+                Summary = new BudgetSummary
+                {
+                    TotalBudgeted = budgetItems.Sum(bi => bi.PlannedAmount)
+                }
+            });
         }
 
-        var budgets = await query
-            .Include(b => b.BudgetItems)
-                .ThenInclude(bi => bi.Category)
-            .OrderByDescending(b => b.Month)
-            .ToListAsync();
-
-        return Ok(budgets);
+        return Ok(responses);
     }
 
+    /// <summary>
+    /// Updates a budget's items and notes.
+    /// </summary>
     [HttpPut("{budgetId}")]
     public async Task<IActionResult> UpdateBudget(int budgetId, [FromBody] BudgetUpdateRequest request)
     {
-        var budget = await _context.Budgets
-            .Include(b => b.BudgetItems)
-            .FirstOrDefaultAsync(b => b.Id == budgetId);
-
+        var budget = await _budgetRepository.GetByIdAsync(budgetId);
         if (budget == null)
         {
             return NotFound($"Budget {budgetId} not found");
         }
+
+        var budgetItems = await _budgetRepository.GetBudgetItemsAsync(budgetId);
+        var budgetItemsList = budgetItems.ToList();
 
         // Update budget items
         foreach (var (categoryId, amount) in request.CategoryAmounts)
         {
-            var budgetItem = budget.BudgetItems.FirstOrDefault(bi => bi.CategoryId == categoryId);
+            var budgetItem = budgetItemsList.FirstOrDefault(bi => bi.CategoryId == categoryId);
             if (budgetItem != null)
             {
+                // Update existing budget item
                 budgetItem.PlannedAmount = amount;
-            }
-        }
-
-        budget.Notes = request.Notes;
-
-        await _context.SaveChangesAsync();
-
-        return Ok(budget);
-    }
-
-    private List<BudgetItem> Generate503020Budget(decimal netIncome, Household household, StateParam stateParam)
-    {
-        var categories = _context.Categories.ToList();
-        var items = new List<BudgetItem>();
-
-        // 50% Needs - distribute to all needs categories
-        var needsAmount = netIncome * 0.5m;
-        var needsCategories = categories.Where(c => c.IsNeed).ToList();
-        var needsDistribution = new Dictionary<string, decimal>
-        {
-            { "Housing", 0.35m },
-            { "Utilities", 0.10m },
-            { "Groceries", 0.15m },
-            { "Transportation", 0.10m },
-            { "Medical/Health", 0.08m },
-            { "Insurance", 0.07m },
-            { "Childcare", 0.05m },
-            { "Minimum Debt Payments", 0.10m }
-        };
-
-        foreach (var category in needsCategories)
-        {
-            if (needsDistribution.TryGetValue(category.Name, out var percentage))
-            {
-                var amount = needsAmount * percentage;
-                items.Add(new BudgetItem
-                {
-                    CategoryId = category.Id,
-                    PlannedAmount = amount
-                });
+                await _budgetRepository.UpdateBudgetItemAsync(budgetItem);
             }
             else
             {
-                // Fallback equal distribution for any missing
-                var fallbackAmount = needsAmount / needsCategories.Count;
-                items.Add(new BudgetItem
+                // Create new budget item if it doesn't exist
+                var newBudgetItem = new BudgetItem
                 {
-                    CategoryId = category.Id,
-                    PlannedAmount = fallbackAmount
-                });
+                    BudgetId = budgetId,
+                    CategoryId = categoryId,
+                    PlannedAmount = amount
+                };
+                await _budgetRepository.CreateBudgetItemAsync(newBudgetItem);
             }
         }
 
-        // 30% Wants - only non-savings non-needs
-        var wantsAmount = netIncome * 0.3m;
-        var savingsKeywords = new[] { "Debt", "Emergency", "Sinking", "Retirement" };
-        var wantsCategories = categories.Where(c => !c.IsNeed && !savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
-        if (wantsCategories.Any())
+        // Update budget notes
+        budget.Notes = request.Notes;
+        await _budgetRepository.UpdateAsync(budget);
+
+        return Ok(new
         {
-            var wantsPerCategory = wantsAmount / wantsCategories.Count;
-            foreach (var category in wantsCategories)
-            {
-                items.Add(new BudgetItem
-                {
-                    CategoryId = category.Id,
-                    PlannedAmount = wantsPerCategory
-                });
-            }
+            BudgetId = budgetId,
+            Message = "Budget updated successfully"
+        });
+    }
+
+    /// <summary>
+    /// Deletes a budget and all its items.
+    /// </summary>
+    [HttpDelete("{budgetId}")]
+    public async Task<IActionResult> DeleteBudget(int budgetId)
+    {
+        var budget = await _budgetRepository.GetByIdAsync(budgetId);
+        if (budget == null)
+        {
+            return NotFound($"Budget {budgetId} not found");
         }
 
-        // 20% Savings/Debt
-        var savingsAmount = netIncome * 0.2m;
-        var savingsCategories = categories.Where(c => savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
-        if (savingsCategories.Any())
+        await _budgetRepository.DeleteAsync(budgetId);
+
+        return Ok(new
         {
-            var savingsPerCategory = savingsAmount / savingsCategories.Count;
-            foreach (var category in savingsCategories)
+            BudgetId = budgetId,
+            Message = "Budget deleted successfully"
+        });
+    }
+
+    /// <summary>
+    /// Generates debt avalanche projection (highest interest first).
+    /// </summary>
+    [HttpPost("debt/avalanche")]
+    public async Task<IActionResult> GenerateAvalancheProjection([FromBody] DebtProjectionRequest request)
+    {
+        try
+        {
+            var avalanche = await _budgetService.GenerateDebtAvalancheProjectionAsync(
+                request.HouseholdId, request.MonthlySurplus);
+
+            return Ok(avalanche);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Error = "Failed to generate avalanche projection", Details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Compares snowball vs avalanche debt payoff methods.
+    /// </summary>
+    [HttpPost("debt/compare")]
+    public async Task<IActionResult> CompareDebtMethods([FromBody] DebtProjectionRequest request)
+    {
+        try
+        {
+            var comparison = await _budgetService.CompareDebtMethodsAsync(
+                request.HouseholdId, request.MonthlySurplus);
+
+            return Ok(comparison);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Error = "Failed to compare debt methods", Details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Generates 12-month budget projection with debt and goal timelines.
+    /// </summary>
+    [HttpGet("{budgetId}/projection/12-month")]
+    public async Task<IActionResult> Get12MonthProjection(int budgetId)
+    {
+        try
+        {
+            var budget = await _budgetRepository.GetByIdAsync(budgetId);
+            if (budget == null)
             {
-                // Check if already added as want (shouldn't be)
-                if (!items.Any(i => i.CategoryId == category.Id))
+                return NotFound($"Budget {budgetId} not found");
+            }
+
+            var projection = await _budgetService.Generate12MonthProjectionAsync(
+                budget.HouseholdId, budgetId);
+
+            return Ok(projection);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Error = "Failed to generate 12-month projection", Details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Validates a budget against guardrails and provides suggestions.
+    /// </summary>
+    [HttpPost("validate")]
+    public async Task<IActionResult> ValidateBudget([FromBody] BudgetValidationRequest request)
+    {
+        try
+        {
+            var validation = await _budgetService.ValidateBudgetAsync(
+                request.HouseholdId, request.CategoryAmounts);
+
+            return Ok(validation);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Error = "Failed to validate budget", Details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Checks budget against COLA-adjusted guardrails.
+    /// </summary>
+    [HttpPost("guardrails")]
+    public async Task<IActionResult> CheckGuardrails([FromBody] BudgetValidationRequest request)
+    {
+        try
+        {
+            var violations = await _budgetService.CheckGuardrailsAsync(
+                request.HouseholdId, request.CategoryAmounts);
+
+            return Ok(violations);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Error = "Failed to check guardrails", Details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Suggests budget reallocations to resolve deficits.
+    /// </summary>
+    [HttpPost("suggestions")]
+    public async Task<IActionResult> GetReallocationSuggestions([FromBody] BudgetValidationRequest request)
+    {
+        try
+        {
+            var suggestions = await _budgetService.SuggestReallocationsAsync(
+                request.HouseholdId, request.CategoryAmounts);
+
+            return Ok(suggestions);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Error = "Failed to generate suggestions", Details = ex.Message });
+        }
+    }
+
+    // Request DTOs
+    public class DebtProjectionRequest
+    {
+        public int HouseholdId { get; set; }
+        public decimal MonthlySurplus { get; set; }
+    }
+
+    public class BudgetValidationRequest
+    {
+        public int HouseholdId { get; set; }
+        public Dictionary<int, decimal> CategoryAmounts { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Live budget recalculation for interactive editor.
+    /// Returns validation, suggestions, and updated projections in real-time.
+    /// </summary>
+    [HttpPost("recalculate")]
+    public async Task<IActionResult> RecalculateBudgetLive([FromBody] BudgetRecalculateRequest request)
+    {
+        try
+        {
+            // Validate budget
+            var validation = await _budgetService.ValidateBudgetAsync(
+                request.HouseholdId, request.CategoryAmounts);
+
+            // Calculate surplus/deficit
+            var household = await _householdRepository.GetByIdAsync(request.HouseholdId);
+            var incomes = await _householdRepository.GetIncomesAsync(request.HouseholdId);
+            var stateParam = await _referenceDataRepository.GetStateParamAsync(household.State);
+
+            var grossIncome = incomes.Sum(i => _budgetService.ConvertToMonthlyAmount(i.GrossAmount, i.Cadence));
+            var netIncome = grossIncome * (1 - stateParam.EstEffectiveTaxRate);
+            var totalBudgeted = request.CategoryAmounts.Sum(ca => ca.Value);
+            var surplus = netIncome - totalBudgeted;
+
+            // Generate debt projection if surplus exists
+            DebtSnowballProjection? snowballProjection = null;
+            DebtAvalancheProjection? avalancheProjection = null;
+
+            var debts = await _householdRepository.GetDebtsAsync(request.HouseholdId);
+            if (debts.Any() && surplus > 0)
+            {
+                snowballProjection = await _budgetService.GenerateDebtSnowballProjectionAsync(
+                    request.HouseholdId, surplus);
+                avalancheProjection = await _budgetService.GenerateDebtAvalancheProjectionAsync(
+                    request.HouseholdId, surplus);
+            }
+
+            // Calculate needs/wants/savings breakdown
+            var categories = await _referenceDataRepository.GetAllCategoriesAsync();
+            var categoryDict = categories.ToDictionary(c => c.Id);
+
+            var savingsKeywords = new[] { "Debt", "Emergency", "Sinking", "Retirement" };
+            decimal totalNeeds = 0m, totalWants = 0m, totalSavings = 0m;
+
+            foreach (var (categoryId, amount) in request.CategoryAmounts)
+            {
+                if (!categoryDict.ContainsKey(categoryId)) continue;
+
+                var category = categoryDict[categoryId];
+                if (category.IsNeed)
                 {
-                    items.Add(new BudgetItem
-                    {
-                        CategoryId = category.Id,
-                        PlannedAmount = savingsPerCategory
-                    });
+                    totalNeeds += amount;
+                }
+                else if (savingsKeywords.Any(kw => category.Name.Contains(kw)))
+                {
+                    totalSavings += amount;
                 }
                 else
                 {
-                    // If somehow added, add to existing
-                    var existing = items.First(i => i.CategoryId == category.Id);
-                    existing.PlannedAmount += savingsPerCategory;
+                    totalWants += amount;
                 }
             }
-        }
 
-        return items;
-    }
-
-    private List<BudgetItem> GenerateZeroBasedBudget(decimal netIncome, Household household, StateParam stateParam)
-    {
-        var categories = _context.Categories.ToList();
-        var items = new List<BudgetItem>();
-
-        // Start with essential needs
-        var remainingIncome = netIncome;
-
-        // Housing
-        var housingCategory = categories.FirstOrDefault(c => c.Name == "Housing");
-        if (housingCategory != null && remainingIncome > 0)
-        {
-            var housingAmount = Math.Min(netIncome * 0.25m, remainingIncome);
-            remainingIncome -= housingAmount;
-            items.Add(new BudgetItem { CategoryId = housingCategory.Id, PlannedAmount = housingAmount });
-        }
-
-        // Other needs based on typical percentages - include all needs
-        var needsPercentages = new Dictionary<string, decimal>
-        {
-            { "Groceries", 0.12m },
-            { "Transportation", 0.08m },
-            { "Utilities", 0.08m },
-            { "Insurance", 0.08m },
-            { "Medical/Health", 0.08m },
-            { "Childcare", 0.05m },
-            { "Minimum Debt Payments", 0.10m }
-        };
-
-        var needsCategories = categories.Where(c => c.IsNeed && c.Name != "Housing").ToList();
-        foreach (var category in needsCategories)
-        {
-            if (needsPercentages.TryGetValue(category.Name, out var percentage) && remainingIncome > 0)
+            return Ok(new
             {
-                var amount = Math.Min(netIncome * percentage, remainingIncome);
-                remainingIncome -= amount;
-                items.Add(new BudgetItem { CategoryId = category.Id, PlannedAmount = amount });
-            }
-            else if (remainingIncome > 0)
-            {
-                // Fallback for any missing needs
-                var fallbackAmount = Math.Min(remainingIncome * 0.05m, remainingIncome);
-                remainingIncome -= fallbackAmount;
-                items.Add(new BudgetItem { CategoryId = category.Id, PlannedAmount = fallbackAmount });
-            }
-        }
-
-        // Distribute remaining to wants and savings
-        var savingsKeywords = new[] { "Debt", "Emergency", "Sinking", "Retirement" };
-        var wantsCategories = categories.Where(c => !c.IsNeed && !savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
-        var savingsCategories = categories.Where(c => savingsKeywords.Any(kw => c.Name.Contains(kw))).ToList();
-        var nonNeedsCategories = wantsCategories.Concat(savingsCategories).ToList();
-
-        if (nonNeedsCategories.Any() && remainingIncome > 0)
-        {
-            var remainingPerCategory = remainingIncome / nonNeedsCategories.Count;
-            foreach (var category in nonNeedsCategories)
-            {
-                if (remainingIncome > 0)
+                validation,
+                financial = new
                 {
-                    var amount = Math.Min(remainingPerCategory, remainingIncome);
-                    remainingIncome -= amount;
-
-                    // Check if already added (shouldn't for non-needs)
-                    var existing = items.FirstOrDefault(i => i.CategoryId == category.Id);
-                    if (existing != null)
-                    {
-                        existing.PlannedAmount += amount;
-                    }
-                    else
-                    {
-                        items.Add(new BudgetItem { CategoryId = category.Id, PlannedAmount = amount });
-                    }
-                }
-            }
-        }
-
-        return items;
-    }
-
-    private List<BudgetItem> GenerateEnvelopeBudget(decimal netIncome, Household household, StateParam stateParam)
-    {
-        // Similar to zero-based but with more explicit categorization
-        return GenerateZeroBasedBudget(netIncome, household, stateParam);
-    }
-
-    private object GenerateDebtSnowballProjection(Household household, decimal monthlySurplus)
-    {
-        var debts = household.Debts.OrderBy(d => d.Balance).ToList();
-        var projection = new List<object>();
-        var currentSurplus = monthlySurplus;
-
-        // Calculate minimum payments first
-        var totalMinPayments = debts.Sum(d => d.MinPayment);
-        currentSurplus -= totalMinPayments;
-
-        var month = 0;
-        var remainingDebts = debts.ToList();
-
-        while (remainingDebts.Any() && month < 120) // Max 10 years
-        {
-            month++;
-            var monthData = new Dictionary<string, object>();
-            var totalPaid = 0m;
-
-            foreach (var debt in remainingDebts.ToList())
-            {
-                var payment = debt.MinPayment;
-                if (debt == remainingDebts.First() && currentSurplus > 0)
+                    grossIncome,
+                    netIncome,
+                    totalBudgeted,
+                    surplus,
+                    deficit = Math.Abs(Math.Min(0, surplus)),
+                    totalNeeds,
+                    totalWants,
+                    totalSavings,
+                    needsPercentage = netIncome > 0 ? (totalNeeds / netIncome) * 100 : 0,
+                    wantsPercentage = netIncome > 0 ? (totalWants / netIncome) * 100 : 0,
+                    savingsPercentage = netIncome > 0 ? (totalSavings / netIncome) * 100 : 0
+                },
+                debtProjections = new
                 {
-                    // Apply surplus to smallest debt (snowball method)
-                    payment += currentSurplus;
-                    currentSurplus = 0;
-                }
-
-                payment = Math.Min(payment, debt.Balance);
-
-                if (payment > 0)
-                {
-                    debt.Balance -= payment;
-                    totalPaid += payment;
-
-                    if (debt.Balance <= 0)
-                    {
-                        remainingDebts.Remove(debt);
-                        if (remainingDebts.Any())
-                        {
-                            // Move surplus to next debt
-                            currentSurplus += debt.MinPayment;
-                        }
-                    }
-                }
-            }
-
-            monthData["Month"] = month;
-            monthData["DebtsRemaining"] = remainingDebts.Count;
-            monthData["TotalPaid"] = totalPaid;
-            monthData["RemainingBalance"] = remainingDebts.Sum(d => d.Balance);
-
-            projection.Add(monthData);
-
-            if (!remainingDebts.Any()) break;
+                    snowball = snowballProjection,
+                    avalanche = avalancheProjection
+                },
+                timestamp = DateTime.UtcNow
+            });
         }
-
-        return new
+        catch (Exception ex)
         {
-            Projection = projection,
-            TotalMonths = month,
-            TotalInterest = 0m // Would need more complex calculation for actual interest
-        };
+            return StatusCode(500, new { Error = "Failed to recalculate budget", Details = ex.Message });
+        }
     }
 
-    private decimal ConvertToMonthlyAmount(decimal amount, string cadence)
+    public class BudgetRecalculateRequest
     {
-        return cadence.ToLower() switch
-        {
-            "weekly" => amount * 4.33m,
-            "biweekly" => amount * 2.17m,
-            "semimonthly" => amount * 2,
-            "monthly" => amount,
-            _ => amount
-        };
+        public int HouseholdId { get; set; }
+        public Dictionary<int, decimal> CategoryAmounts { get; set; } = new();
     }
 }

@@ -1,29 +1,42 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.Extensions.Configuration;
+using backend.Models;
+using backend.Repositories;
+using backend.Services;
+using backend.DTOs;
 
 namespace backend.Controllers;
 
+/// <summary>
+/// Controller for user onboarding and household management.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class OnboardingController : ControllerBase
 {
-    private readonly AppDbContext _context;
-    private readonly IConfiguration _configuration;
+    private readonly IUserRepository _userRepository;
+    private readonly IHouseholdRepository _householdRepository;
+    private readonly IReferenceDataRepository _referenceDataRepository;
+    private readonly IBudgetService _budgetService;
+    private readonly JwtService _jwtService;
 
-    public OnboardingController(AppDbContext context, IConfiguration configuration)
+    public OnboardingController(
+        IUserRepository userRepository,
+        IHouseholdRepository householdRepository,
+        IReferenceDataRepository referenceDataRepository,
+        IBudgetService budgetService,
+        JwtService jwtService)
     {
-        _context = context;
-        _configuration = configuration;
+        _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+        _householdRepository = householdRepository ?? throw new ArgumentNullException(nameof(householdRepository));
+        _referenceDataRepository = referenceDataRepository ?? throw new ArgumentNullException(nameof(referenceDataRepository));
+        _budgetService = budgetService ?? throw new ArgumentNullException(nameof(budgetService));
+        _jwtService = jwtService ?? throw new ArgumentNullException(nameof(jwtService));
     }
 
     public class OnboardingRequest
     {
         public string Email { get; set; } = string.Empty;
+        public string? Password { get; set; }
         public string State { get; set; } = string.Empty;
         public int HouseholdSize { get; set; }
         public List<IncomeRequest> Incomes { get; set; } = new();
@@ -66,56 +79,75 @@ public class OnboardingController : ControllerBase
         public int Priority { get; set; }
     }
 
+    /// <summary>
+    /// Creates a new household with user and initial financial data.
+    /// </summary>
     [HttpPost]
     public async Task<IActionResult> CreateHousehold([FromBody] OnboardingRequest request)
     {
         // Validate state exists
-        var stateParam = await _context.StateParams
-            .FirstOrDefaultAsync(sp => sp.State == request.State);
-
+        var stateParam = await _referenceDataRepository.GetStateParamAsync(request.State);
         if (stateParam == null)
         {
             return BadRequest($"Invalid state: {request.State}");
         }
 
-        // Create user (normalize email)
+        // Validate and handle password
+        string actualPassword;
+        if (string.IsNullOrWhiteSpace(request.Password))
+        {
+            // Generate a default password for demo purposes
+            actualPassword = GenerateDefaultPassword();
+        }
+        else if (request.Password.Length < 8)
+        {
+            return BadRequest("Password must be at least 8 characters long");
+        }
+        else
+        {
+            actualPassword = request.Password;
+        }
+
+        // Create user (normalize email and hash password)
         var normalizedEmail = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
         var user = new User
         {
             Email = normalizedEmail,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            PasswordHash = PasswordHasher.HashPassword(actualPassword),
+            IsAdmin = false
         };
 
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
+        var userId = await _userRepository.CreateAsync(user);
+        user.Id = userId;
 
         // Create household
         var household = new Household
         {
-            UserId = user.Id,
+            UserId = userId,
             State = request.State,
             HouseholdSize = request.HouseholdSize
         };
 
-        _context.Households.Add(household);
-        await _context.SaveChangesAsync();
+        var householdId = await _householdRepository.CreateAsync(household);
+        household.Id = householdId;
 
-        // Set the user's current household ID
-        user.CurrentHouseholdId = household.Id;
-        await _context.SaveChangesAsync();
+        // Set the user's current household ID and mark onboarding as completed
+        user.CurrentHouseholdId = householdId;
+        user.HasCompletedOnboarding = true;
+        await _userRepository.UpdateAsync(user);
 
         // Create incomes
         foreach (var incomeReq in request.Incomes)
         {
             var income = new Income
             {
-                HouseholdId = household.Id,
+                HouseholdId = householdId,
                 Name = incomeReq.Name,
                 Cadence = incomeReq.Cadence,
                 GrossAmount = incomeReq.GrossAmount
             };
-
-            _context.Incomes.Add(income);
+            await _householdRepository.CreateIncomeAsync(income);
         }
 
         // Create expenses
@@ -123,15 +155,14 @@ public class OnboardingController : ControllerBase
         {
             var expense = new Expense
             {
-                HouseholdId = household.Id,
+                HouseholdId = householdId,
                 Name = expenseReq.Name,
                 CategoryId = expenseReq.CategoryId,
                 Cadence = expenseReq.Cadence,
                 Amount = expenseReq.Amount,
                 IsRecurring = expenseReq.IsRecurring
             };
-
-            _context.Expenses.Add(expense);
+            await _householdRepository.CreateExpenseAsync(expense);
         }
 
         // Create debts
@@ -139,15 +170,14 @@ public class OnboardingController : ControllerBase
         {
             var debt = new Debt
             {
-                HouseholdId = household.Id,
+                HouseholdId = householdId,
                 Type = debtReq.Type,
                 Name = debtReq.Name,
                 Balance = debtReq.Balance,
                 Apr = debtReq.Apr,
                 MinPayment = debtReq.MinPayment
             };
-
-            _context.Debts.Add(debt);
+            await _householdRepository.CreateDebtAsync(debt);
         }
 
         // Create goals
@@ -155,129 +185,127 @@ public class OnboardingController : ControllerBase
         {
             var goal = new Goal
             {
-                HouseholdId = household.Id,
+                HouseholdId = householdId,
                 Type = goalReq.Type,
                 Name = goalReq.Name,
                 TargetAmount = goalReq.TargetAmount,
                 TargetDate = goalReq.TargetDate,
                 Priority = goalReq.Priority
             };
-
-            _context.Goals.Add(goal);
+            await _householdRepository.CreateGoalAsync(goal);
         }
 
-        // Create default settings
-        var settings = new Setting
+        // Automatically generate initial budget
+        try
         {
-            HouseholdId = household.Id,
-            StrictMode = false,
-            GuardrailOverridesJson = "{}"
-        };
-
-        _context.Settings.Add(settings);
-
-        await _context.SaveChangesAsync();
-
-        // Automatically generate initial budget for the user
-        await GenerateInitialBudget(household);
+            var now = DateTime.UtcNow;
+            await _budgetService.GenerateBudgetAsync(householdId, "50/30/20", now.Month, now.Year);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating initial budget: {ex.Message}");
+            // Don't fail onboarding if budget generation fails
+        }
 
         // Generate JWT token for the user
-        var token = GenerateJwtToken(user);
+        var token = _jwtService.GenerateToken(userId, user.Email, user.IsAdmin);
 
         return Ok(new
         {
-            UserId = user.Id,
-            HouseholdId = household.Id,
+            UserId = userId,
+            HouseholdId = householdId,
             Token = token,
             Email = user.Email,
+            IsAdmin = user.IsAdmin,
             Message = "Household created successfully with initial budget generated"
         });
     }
 
+    /// <summary>
+    /// Gets household details by ID.
+    /// </summary>
     [HttpGet("household/{householdId}")]
     public async Task<IActionResult> GetHousehold(int householdId)
     {
-        var household = await _context.Households
-            .Include(h => h.Incomes)
-            .Include(h => h.Expenses)
-            .ThenInclude(e => e.Category)
-            .Include(h => h.Debts)
-            .Include(h => h.Goals)
-            .FirstOrDefaultAsync(h => h.Id == householdId);
-
+        var household = await _householdRepository.GetByIdAsync(householdId);
         if (household == null)
         {
             return NotFound($"Household {householdId} not found");
         }
 
-        // Return data as anonymous object to avoid circular references in JSON serialization
-        return Ok(new
+        var incomes = await _householdRepository.GetIncomesAsync(householdId);
+        var expenses = await _householdRepository.GetExpensesAsync(householdId);
+        var debts = await _householdRepository.GetDebtsAsync(householdId);
+        var goals = await _householdRepository.GetGoalsAsync(householdId);
+        var categories = await _referenceDataRepository.GetAllCategoriesAsync();
+        var categoryDict = categories.ToDictionary(c => c.Id);
+
+        var response = new HouseholdResponse
         {
             Id = household.Id,
             UserId = household.UserId,
             State = household.State,
             HouseholdSize = household.HouseholdSize,
-            Incomes = household.Incomes.Select(i => new
+            Incomes = incomes.Select(i => new IncomeDto
             {
                 Id = i.Id,
+                HouseholdId = i.HouseholdId,
                 Name = i.Name,
                 Cadence = i.Cadence,
-                GrossAmount = i.GrossAmount,
-                HouseholdId = i.HouseholdId
-            }),
-            Expenses = household.Expenses.Select(e => new
+                GrossAmount = i.GrossAmount
+            }).ToList(),
+            Expenses = expenses.Select(e => new ExpenseDto
             {
                 Id = e.Id,
-                Name = e.Name,
-                Amount = e.Amount,
-                Cadence = e.Cadence,
-                IsRecurring = e.IsRecurring,
-                CategoryId = e.CategoryId,
                 HouseholdId = e.HouseholdId,
-                Category = e.Category == null ? null : new
-                {
-                    Id = e.Category.Id,
-                    Name = e.Category.Name,
-                    IsNeed = e.Category.IsNeed,
-                    ParentId = e.Category.ParentId
-                }
-            }),
-            Debts = household.Debts.Select(d => new
+                Name = e.Name,
+                CategoryId = e.CategoryId,
+                CategoryName = categoryDict.ContainsKey(e.CategoryId) ? categoryDict[e.CategoryId].Name : "Unknown",
+                IsNeed = categoryDict.ContainsKey(e.CategoryId) && categoryDict[e.CategoryId].IsNeed,
+                Cadence = e.Cadence,
+                Amount = e.Amount,
+                IsRecurring = e.IsRecurring
+            }).ToList(),
+            Debts = debts.Select(d => new DebtDto
             {
                 Id = d.Id,
+                HouseholdId = d.HouseholdId,
                 Type = d.Type,
                 Name = d.Name,
                 Balance = d.Balance,
                 Apr = d.Apr,
-                MinPayment = d.MinPayment,
-                HouseholdId = d.HouseholdId
-            }),
-            Goals = household.Goals.Select(g => new
+                MinPayment = d.MinPayment
+            }).ToList(),
+            Goals = goals.Select(g => new GoalDto
             {
                 Id = g.Id,
+                HouseholdId = g.HouseholdId,
                 Type = g.Type,
                 Name = g.Name,
                 TargetAmount = g.TargetAmount,
                 TargetDate = g.TargetDate,
-                Priority = g.Priority,
-                HouseholdId = g.HouseholdId
-            })
-        });
+                Priority = g.Priority
+            }).ToList()
+        };
+
+        return Ok(response);
     }
 
+    /// <summary>
+    /// Gets household by user email.
+    /// </summary>
     [HttpGet("household/by-email/{email}")]
     public async Task<IActionResult> GetHouseholdByEmail(string email)
     {
         var normalized = (email ?? string.Empty).Trim().ToLowerInvariant();
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized);
+        var user = await _userRepository.GetByEmailAsync(normalized);
 
         if (user == null)
         {
             return NotFound($"User with email {email} not found");
         }
 
-        var household = await _context.Households
-            .FirstOrDefaultAsync(h => h.UserId == user.Id);
+        var household = await _householdRepository.GetByUserIdAsync(user.Id);
 
         if (household == null)
         {
@@ -287,23 +315,28 @@ public class OnboardingController : ControllerBase
         return Ok(household);
     }
 
+    private string GenerateDefaultPassword()
+    {
+        // Generate a secure default password for demo purposes
+        var random = new Random();
+        var password = "Demo" + random.Next(1000, 9999) + "!";
+        return password;
+    }
+
+    /// <summary>
+    /// Updates household information and related entities.
+    /// </summary>
     [HttpPut("household/{householdId}")]
     public async Task<IActionResult> UpdateHousehold(int householdId, [FromBody] OnboardingRequest request)
     {
-        var household = await _context.Households
-            .Include(h => h.Incomes)
-            .Include(h => h.Debts)
-            .FirstOrDefaultAsync(h => h.Id == householdId);
-
+        var household = await _householdRepository.GetByIdAsync(householdId);
         if (household == null)
         {
             return NotFound($"Household {householdId} not found");
         }
 
         // Validate state exists
-        var stateParam = await _context.StateParams
-            .FirstOrDefaultAsync(sp => sp.State == request.State);
-
+        var stateParam = await _referenceDataRepository.GetStateParamAsync(request.State);
         if (stateParam == null)
         {
             return BadRequest($"Invalid state: {request.State}");
@@ -312,290 +345,43 @@ public class OnboardingController : ControllerBase
         // Update household basic info
         household.State = request.State;
         household.HouseholdSize = request.HouseholdSize;
+        await _householdRepository.UpdateAsync(household);
 
         // Update incomes (replace all existing)
-        _context.Incomes.RemoveRange(household.Incomes);
+        await _householdRepository.DeleteIncomesAsync(householdId);
         foreach (var incomeReq in request.Incomes)
         {
             var income = new Income
             {
-                HouseholdId = household.Id,
+                HouseholdId = householdId,
                 Name = incomeReq.Name,
                 Cadence = incomeReq.Cadence,
                 GrossAmount = incomeReq.GrossAmount
             };
-            _context.Incomes.Add(income);
+            await _householdRepository.CreateIncomeAsync(income);
         }
 
         // Update debts (replace all existing)
-        _context.Debts.RemoveRange(household.Debts);
+        await _householdRepository.DeleteDebtsAsync(householdId);
         foreach (var debtReq in request.Debts)
         {
             var debt = new Debt
             {
-                HouseholdId = household.Id,
+                HouseholdId = householdId,
                 Type = debtReq.Type,
                 Name = debtReq.Name,
                 Balance = debtReq.Balance,
                 Apr = debtReq.Apr,
                 MinPayment = debtReq.MinPayment
             };
-            _context.Debts.Add(debt);
+            await _householdRepository.CreateDebtAsync(debt);
         }
-
-        await _context.SaveChangesAsync();
 
         return Ok(new
         {
-            HouseholdId = household.Id,
+            HouseholdId = householdId,
             Message = "Household updated successfully"
         });
     }
 
-    private async Task GenerateInitialBudget(Household household)
-    {
-        try
-        {
-            // Reload household with related data to ensure incomes/debts are available
-            var loadedHousehold = await _context.Households
-                .Include(h => h.Incomes)
-                .Include(h => h.Debts)
-                .FirstOrDefaultAsync(h => h.Id == household.Id);
-
-            if (loadedHousehold == null)
-            {
-                Console.WriteLine($"Warning: Household {household.Id} not found when generating initial budget");
-                return;
-            }
-
-            // Get state parameters for tax and COLA calculations
-            var stateParam = await _context.StateParams
-                .FirstOrDefaultAsync(sp => sp.State == loadedHousehold.State);
-
-            if (stateParam == null)
-            {
-                Console.WriteLine($"Warning: State parameters not found for {loadedHousehold.State}, skipping budget generation");
-                return;
-            }
-
-            // Calculate total monthly income
-            var totalMonthlyIncome = loadedHousehold.Incomes
-                .Select(income => ConvertToMonthlyAmount(income.GrossAmount, income.Cadence))
-                .Sum();
-
-            if (totalMonthlyIncome <= 0)
-            {
-                Console.WriteLine($"Warning: No income found for household {household.Id}, skipping budget generation");
-                return;
-            }
-
-            // Calculate estimated net income (after simple tax)
-            var estimatedTax = totalMonthlyIncome * stateParam.EstEffectiveTaxRate;
-            var netIncome = totalMonthlyIncome - estimatedTax;
-
-            // Generate budget using 50/30/20 methodology
-            var budgetItems = Generate503020Budget(netIncome, loadedHousehold, stateParam);
-            var budgetDate = DateTime.UtcNow;
-
-            // Create budget record
-            var budget = new Budget
-            {
-                HouseholdId = household.Id,
-                Methodology = "50/30/20",
-                Month = new DateTime(budgetDate.Year, budgetDate.Month, 1),
-                Notes = "Auto-generated initial budget"
-            };
-
-            _context.Budgets.Add(budget);
-            await _context.SaveChangesAsync();
-
-            // Add budget items
-            foreach (var item in budgetItems)
-            {
-                item.BudgetId = budget.Id;
-            }
-
-            _context.BudgetItems.AddRange(budgetItems);
-            await _context.SaveChangesAsync();
-
-            // Generate debt snowball projection if debts exist
-            if (loadedHousehold.Debts.Any())
-            {
-                var snowballProjection = GenerateDebtSnowballProjection(loadedHousehold, netIncome);
-                Console.WriteLine($"Debt snowball projection generated for household {household.Id}");
-            }
-
-            Console.WriteLine($"Initial budget generated successfully for household {household.Id}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error generating initial budget for household {household.Id}: {ex.Message}");
-            // Don't throw - we don't want to fail onboarding due to budget generation issues
-        }
-    }
-
-    private List<BudgetItem> Generate503020Budget(decimal netIncome, Household household, StateParam stateParam)
-    {
-        var categories = _context.Categories.ToList();
-        var items = new List<BudgetItem>();
-
-        // 50% Needs
-        var needsAmount = netIncome * 0.5m;
-        var needsCategories = categories.Where(c => c.IsNeed).ToList();
-
-        // Distribute needs proportionally based on typical percentages
-        var needsDistribution = new Dictionary<string, decimal>
-        {
-            { "Housing", 0.60m }, // 60% of needs
-            { "Groceries", 0.20m }, // 20% of needs
-            { "Transportation", 0.10m }, // 10% of needs
-            { "Utilities", 0.05m }, // 5% of needs
-            { "Insurance", 0.05m } // 5% of needs
-        };
-
-        foreach (var category in needsCategories)
-        {
-            if (needsDistribution.TryGetValue(category.Name, out var percentage))
-            {
-                var amount = needsAmount * percentage;
-                items.Add(new BudgetItem
-                {
-                    CategoryId = category.Id,
-                    PlannedAmount = amount
-                });
-            }
-        }
-
-        // 30% Wants
-        var wantsAmount = netIncome * 0.3m;
-        var wantsCategories = categories.Where(c => !c.IsNeed).ToList();
-        var wantsPerCategory = wantsAmount / Math.Max(wantsCategories.Count, 1);
-
-        foreach (var category in wantsCategories.Take(5)) // Limit to first 5 wants categories
-        {
-            items.Add(new BudgetItem
-            {
-                CategoryId = category.Id,
-                PlannedAmount = wantsPerCategory
-            });
-        }
-
-        // 20% Savings/Debt
-        var savingsAmount = netIncome * 0.2m;
-        var debtCategories = categories.Where(c => c.Name.Contains("Debt") || c.Name.Contains("Emergency") || c.Name.Contains("Retirement")).ToList();
-        var savingsPerCategory = savingsAmount / Math.Max(debtCategories.Count, 1);
-
-        foreach (var category in debtCategories)
-        {
-            items.Add(new BudgetItem
-            {
-                CategoryId = category.Id,
-                PlannedAmount = savingsPerCategory
-            });
-        }
-
-        return items;
-    }
-
-    private object GenerateDebtSnowballProjection(Household household, decimal monthlySurplus)
-    {
-        var debts = household.Debts.OrderBy(d => d.Balance).ToList();
-        var projection = new List<object>();
-        var currentSurplus = monthlySurplus;
-
-        // Calculate minimum payments first
-        var totalMinPayments = debts.Sum(d => d.MinPayment);
-        currentSurplus -= totalMinPayments;
-
-        var month = 0;
-        var remainingDebts = debts.ToList();
-
-        while (remainingDebts.Any() && month < 120) // Max 10 years
-        {
-            month++;
-            var monthData = new Dictionary<string, object>();
-            var totalPaid = 0m;
-
-            foreach (var debt in remainingDebts.ToList())
-            {
-                var payment = debt.MinPayment;
-                if (debt == remainingDebts.First() && currentSurplus > 0)
-                {
-                    // Apply surplus to smallest debt (snowball method)
-                    payment += currentSurplus;
-                    currentSurplus = 0;
-                }
-
-                payment = Math.Min(payment, debt.Balance);
-
-                if (payment > 0)
-                {
-                    debt.Balance -= payment;
-                    totalPaid += payment;
-
-                    if (debt.Balance <= 0)
-                    {
-                        remainingDebts.Remove(debt);
-                        if (remainingDebts.Any())
-                        {
-                            // Move surplus to next debt
-                            currentSurplus += debt.MinPayment;
-                        }
-                    }
-                }
-            }
-
-            monthData["Month"] = month;
-            monthData["DebtsRemaining"] = remainingDebts.Count;
-            monthData["TotalPaid"] = totalPaid;
-            monthData["RemainingBalance"] = remainingDebts.Sum(d => d.Balance);
-
-            projection.Add(monthData);
-
-            if (!remainingDebts.Any()) break;
-        }
-
-        return new
-        {
-            Projection = projection,
-            TotalMonths = month,
-            TotalInterest = 0m // Would need more complex calculation for actual interest
-        };
-    }
-
-    private decimal ConvertToMonthlyAmount(decimal amount, string cadence)
-    {
-        return cadence.ToLower() switch
-        {
-            "weekly" => amount * 4.33m,
-            "biweekly" => amount * 2.17m,
-            "semimonthly" => amount * 2,
-            "monthly" => amount,
-            _ => amount
-        };
-    }
-
-    private string GenerateJwtToken(User user)
-    {
-        var jwtKey = _configuration["Jwt:Key"] ?? "YourSuperSecretKeyThatIsAtLeast32CharactersLong";
-        var key = Encoding.ASCII.GetBytes(jwtKey);
-
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Email, user.Email)
-            }),
-            Expires = DateTime.UtcNow.AddDays(7), // Token valid for 7 days
-            SigningCredentials = new SigningCredentials(
-                new SymmetricSecurityKey(key),
-                SecurityAlgorithms.HmacSha256Signature)
-        };
-
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var token = tokenHandler.CreateToken(tokenDescriptor);
-
-        return tokenHandler.WriteToken(token);
-    }
 }

@@ -282,8 +282,8 @@ class OnboardingManager {
         const emailDisplay = document.getElementById('user-email-display');
 
         const storedEmail = (function() {
-            try { return sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail') || 'demo@example.com'; }
-            catch { return 'demo@example.com'; }
+            try { return sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail') || ''; }
+            catch { return ''; }
         })();
 
         if (emailField) {
@@ -355,8 +355,8 @@ class OnboardingManager {
 
             // Get form field values with debugging
             const email = (function() {
-                try { return sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail') || 'demo@example.com'; }
-                catch { return 'demo@example.com'; }
+                try { return sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail') || ''; }
+                catch { return ''; }
             })();
             const stateElement = document.getElementById('state');
             const householdSizeElement = document.getElementById('household-size');
@@ -422,20 +422,23 @@ class OnboardingManager {
             console.log('Response contains token:', response.token ? 'YES' : 'NO');
 
 
-            // Store basic data in localStorage for persistence across page navigation
+            // Store authentication data in localStorage for persistence across page navigation
             localStorage.setItem('userEmail', response.email || formData.email);
+            localStorage.setItem('authToken', response.token);
             localStorage.setItem('currentHouseholdId', String(response.householdId));
+            localStorage.setItem('userId', String(response.userId));
+            localStorage.setItem('isAdmin', String(response.isAdmin || false));
 
             console.log('Stored in localStorage:');
             console.log('- userEmail:', response.email || formData.email);
             console.log('- currentHouseholdId:', response.householdId);
 
-            // Show success message and redirect to dashboard page
-            window.uiManager.showSuccessAlert('Welcome! Your financial profile has been created and your initial budget has been generated.');
-            console.log('About to redirect to dashboard.html in 2 seconds...');
+            // Show success message and redirect to login page
+            window.uiManager.showSuccessAlert('Welcome! Your financial profile has been created successfully. Please login to access your dashboard.');
+            console.log('About to redirect to index.html (login page) in 2 seconds...');
             setTimeout(() => {
-                console.log('Redirecting to dashboard.html now...');
-                window.location.href = 'dashboard.html';
+                console.log('Redirecting to index.html now...');
+                window.location.href = 'index.html';
             }, 2000);
         } catch (error) {
             console.error('=== ERROR SUBMITTING ONBOARDING ===');

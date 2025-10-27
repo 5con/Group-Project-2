@@ -4,25 +4,59 @@ class ModulesManager {
         this.modules = [];
         this.currentModule = null;
         this.completedModules = new Set();
-        this.loadCompletedModules();
+        // Load completed modules in init() now since it's async
     }
 
-    // Load completed modules from localStorage
-    loadCompletedModules() {
-        const completed = localStorage.getItem('completedModules');
-        if (completed) {
-            this.completedModules = new Set(JSON.parse(completed));
+    // Load completed modules from API
+    async loadCompletedModules() {
+        try {
+            const userId = localStorage.getItem('userId');
+            if (!userId) return;
+
+            const progress = await window.apiManager.getModulesWithProgress(userId);
+            if (progress && Array.isArray(progress)) {
+                this.completedModules = new Set(
+                    progress.filter(m => m.isCompleted).map(m => m.moduleId)
+                );
+            }
+        } catch (error) {
+            console.error('Error loading module progress from API:', error);
+            // Fallback to localStorage
+            const completed = localStorage.getItem('completedModules');
+            if (completed) {
+                this.completedModules = new Set(JSON.parse(completed));
+            }
         }
     }
 
-    // Save completed modules to localStorage
-    saveCompletedModules() {
-        localStorage.setItem('completedModules', JSON.stringify([...this.completedModules]));
+    // Save completed modules to API
+    async saveCompletedModules() {
+        try {
+            const userId = localStorage.getItem('userId');
+            if (!userId) {
+                // Fallback to localStorage if no userId
+                localStorage.setItem('completedModules', JSON.stringify([...this.completedModules]));
+                return;
+            }
+
+            // Save to API for each completed module
+            for (const moduleId of this.completedModules) {
+                await window.apiManager.updateModuleProgress(userId, moduleId, 100);
+            }
+            
+            // Also save to localStorage as backup
+            localStorage.setItem('completedModules', JSON.stringify([...this.completedModules]));
+        } catch (error) {
+            console.error('Error saving module progress to API:', error);
+            // Fallback to localStorage only
+            localStorage.setItem('completedModules', JSON.stringify([...this.completedModules]));
+        }
     }
 
     // Initialize the modules system
-    init() {
-        this.loadModulesData();
+    async init() {
+        await this.loadCompletedModules();
+        await this.loadModulesData();
         this.setupEventListeners();
         this.displayModulesGrid();
     }
