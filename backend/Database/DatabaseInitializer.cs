@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Linq;
 
 namespace backend.Database;
 
@@ -128,12 +129,16 @@ public class DatabaseInitializer
             }
             else
             {
-                // Categories table exists, check if it has data
-                using var checkCommand = checkConnection.CreateCommand();
-                checkCommand.CommandText = "SELECT COUNT(*) FROM Categories;";
-                var count = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
+                // Categories table exists; check required seed tables individually
+                using var catCountCmd = checkConnection.CreateCommand();
+                catCountCmd.CommandText = "SELECT COUNT(*) FROM Categories;";
+                var catCount = Convert.ToInt32(await catCountCmd.ExecuteScalarAsync());
 
-                if (count > 0)
+                using var stateCountCmd = checkConnection.CreateCommand();
+                stateCountCmd.CommandText = "SELECT COUNT(*) FROM StateParams;";
+                var stateCount = Convert.ToInt32(await stateCountCmd.ExecuteScalarAsync());
+
+                if (catCount > 0 && stateCount > 0)
                 {
                     Console.WriteLine("Database already seeded, skipping seed data.");
                     return;
@@ -157,19 +162,16 @@ public class DatabaseInitializer
         walCommand.CommandText = "PRAGMA journal_mode = WAL;";
         await walCommand.ExecuteNonQueryAsync();
 
-        // Split by semicolon and execute each statement
-        var statements = seedSql.Split(new[] { ";\r\n", ";\n" }, StringSplitOptions.RemoveEmptyEntries);
+        // Split the seed SQL into individual statements by ';', trim whitespace, and filter comments
+        var statements = seedSql.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => !string.IsNullOrWhiteSpace(s) && !s.StartsWith("--"))
+            .ToArray();
 
         foreach (var statement in statements)
         {
-            var trimmed = statement.Trim();
-            if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("--"))
-            {
-                continue;
-            }
-
             using var command = connection.CreateCommand();
-            command.CommandText = trimmed + ";";
+            command.CommandText = statement + ";";
             await command.ExecuteNonQueryAsync();
         }
 

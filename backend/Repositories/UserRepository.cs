@@ -22,7 +22,7 @@ public class UserRepository : IUserRepository
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT Id, Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, CreatedAt 
+            SELECT Id, Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, HasCompletedOnboarding, CreatedAt 
             FROM Users 
             WHERE Id = @id";
         command.Parameters.AddWithValue("@id", id);
@@ -43,7 +43,7 @@ public class UserRepository : IUserRepository
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT Id, Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, CreatedAt 
+            SELECT Id, Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, HasCompletedOnboarding, CreatedAt 
             FROM Users 
             WHERE LOWER(Email) = LOWER(@email)";
         command.Parameters.AddWithValue("@email", email);
@@ -66,7 +66,7 @@ public class UserRepository : IUserRepository
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT Id, Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, CreatedAt 
+            SELECT Id, Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, HasCompletedOnboarding, CreatedAt 
             FROM Users 
             ORDER BY CreatedAt DESC";
 
@@ -86,8 +86,8 @@ public class UserRepository : IUserRepository
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            INSERT INTO Users (Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, CreatedAt)
-            VALUES (@email, @passwordHash, @isAdmin, @locale, @currentHouseholdId, @createdAt);
+            INSERT INTO Users (Email, PasswordHash, IsAdmin, Locale, CurrentHouseholdId, HasCompletedOnboarding, CreatedAt)
+            VALUES (@email, @passwordHash, @isAdmin, @locale, @currentHouseholdId, @hasCompletedOnboarding, @createdAt);
             SELECT last_insert_rowid();";
 
         command.Parameters.AddWithValue("@email", user.Email);
@@ -95,6 +95,7 @@ public class UserRepository : IUserRepository
         command.Parameters.AddWithValue("@isAdmin", user.IsAdmin ? 1 : 0);
         command.Parameters.AddWithValue("@locale", user.Locale);
         command.Parameters.AddWithValue("@currentHouseholdId", (object?)user.CurrentHouseholdId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@hasCompletedOnboarding", user.HasCompletedOnboarding ? 1 : 0);
         command.Parameters.AddWithValue("@createdAt", user.CreatedAt.ToString("o"));
 
         var id = await command.ExecuteScalarAsync();
@@ -113,7 +114,8 @@ public class UserRepository : IUserRepository
                 PasswordHash = @passwordHash, 
                 IsAdmin = @isAdmin, 
                 Locale = @locale, 
-                CurrentHouseholdId = @currentHouseholdId
+                CurrentHouseholdId = @currentHouseholdId,
+                HasCompletedOnboarding = @hasCompletedOnboarding
             WHERE Id = @id";
 
         command.Parameters.AddWithValue("@id", user.Id);
@@ -122,6 +124,7 @@ public class UserRepository : IUserRepository
         command.Parameters.AddWithValue("@isAdmin", user.IsAdmin ? 1 : 0);
         command.Parameters.AddWithValue("@locale", user.Locale);
         command.Parameters.AddWithValue("@currentHouseholdId", (object?)user.CurrentHouseholdId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@hasCompletedOnboarding", user.HasCompletedOnboarding ? 1 : 0);
 
         await command.ExecuteNonQueryAsync();
     }
@@ -161,7 +164,8 @@ public class UserRepository : IUserRepository
             IsAdmin = reader.GetInt32(3) == 1,
             Locale = reader.GetString(4),
             CurrentHouseholdId = reader.IsDBNull(5) ? null : reader.GetInt32(5),
-            CreatedAt = DateTime.Parse(reader.GetString(6))
+            HasCompletedOnboarding = reader.GetInt32(6) == 1,
+            CreatedAt = DateTime.Parse(reader.GetString(7))
         };
     }
 }

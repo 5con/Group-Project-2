@@ -69,8 +69,8 @@ public class ReferenceDataRepository : IReferenceDataRepository
         command.CommandText = @"
             SELECT State, ColaIndex, EstEffectiveTaxRate 
             FROM StateParams 
-            WHERE State = @state";
-        command.Parameters.AddWithValue("@state", state);
+            WHERE UPPER(State) = UPPER(@state)";
+        command.Parameters.AddWithValue("@state", (state ?? string.Empty).Trim());
 
         using var reader = await command.ExecuteReaderAsync();
         if (await reader.ReadAsync())

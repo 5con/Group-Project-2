@@ -82,6 +82,7 @@ public class AuthController : ControllerBase
                     IsAdmin = false, // New users are not admins by default
                     Locale = "en-US",
                     CurrentHouseholdId = null,
+                    HasCompletedOnboarding = false, // New users need to complete onboarding
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -186,6 +187,7 @@ public class AuthController : ControllerBase
                 IsAdmin = false,
                 Locale = "en-US",
                 CurrentHouseholdId = null,
+                HasCompletedOnboarding = false,
                 CreatedAt = DateTime.UtcNow
             };
 

@@ -428,16 +428,18 @@ class OnboardingManager {
             localStorage.setItem('currentHouseholdId', String(response.householdId));
             localStorage.setItem('userId', String(response.userId));
             localStorage.setItem('isAdmin', String(response.isAdmin || false));
+            localStorage.setItem('hasCompletedOnboarding', String(response.hasCompletedOnboarding !== undefined ? response.hasCompletedOnboarding : true)); // Mark onboarding as completed
 
             console.log('Stored in localStorage:');
             console.log('- userEmail:', response.email || formData.email);
             console.log('- currentHouseholdId:', response.householdId);
+            console.log('- hasCompletedOnboarding: true');
 
-            // Show success message and redirect to login page
-            window.uiManager.showSuccessAlert('Welcome! Your financial profile has been created successfully. Please login to access your dashboard.');
-            console.log('About to redirect to index.html (login page) in 2 seconds...');
+            // Show success message and redirect to dashboard
+            window.uiManager.showSuccessAlert('Welcome! Your financial profile has been created successfully. Redirecting to dashboard...');
+            console.log('About to redirect to dashboard in 2 seconds...');
             setTimeout(() => {
-                console.log('Redirecting to index.html now...');
+                console.log('Redirecting to dashboard now...');
                 window.location.href = 'index.html';
             }, 2000);
         } catch (error) {

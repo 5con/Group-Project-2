@@ -85,11 +85,12 @@ public class OnboardingController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateHousehold([FromBody] OnboardingRequest request)
     {
-        // Validate state exists
-        var stateParam = await _referenceDataRepository.GetStateParamAsync(request.State);
+        // Normalize and validate state
+        var normalizedState = (request.State ?? string.Empty).Trim().ToUpperInvariant();
+        var stateParam = await _referenceDataRepository.GetStateParamAsync(normalizedState);
         if (stateParam == null)
         {
-            return BadRequest($"Invalid state: {request.State}");
+            return BadRequest($"Invalid state: {normalizedState}");
         }
 
         // Validate and handle password
@@ -125,7 +126,7 @@ public class OnboardingController : ControllerBase
         var household = new Household
         {
             UserId = userId,
-            State = request.State,
+            State = normalizedState,
             HouseholdSize = request.HouseholdSize
         };
 
@@ -217,6 +218,7 @@ public class OnboardingController : ControllerBase
             Token = token,
             Email = user.Email,
             IsAdmin = user.IsAdmin,
+            HasCompletedOnboarding = user.HasCompletedOnboarding,
             Message = "Household created successfully with initial budget generated"
         });
     }
@@ -335,15 +337,16 @@ public class OnboardingController : ControllerBase
             return NotFound($"Household {householdId} not found");
         }
 
-        // Validate state exists
-        var stateParam = await _referenceDataRepository.GetStateParamAsync(request.State);
+        // Normalize and validate state
+        var normalizedState = (request.State ?? string.Empty).Trim().ToUpperInvariant();
+        var stateParam = await _referenceDataRepository.GetStateParamAsync(normalizedState);
         if (stateParam == null)
         {
-            return BadRequest($"Invalid state: {request.State}");
+            return BadRequest($"Invalid state: {normalizedState}");
         }
 
         // Update household basic info
-        household.State = request.State;
+        household.State = normalizedState;
         household.HouseholdSize = request.HouseholdSize;
         await _householdRepository.UpdateAsync(household);
 

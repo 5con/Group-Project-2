@@ -1069,6 +1069,25 @@ class FinancialApp {
             console.error('Error clearing localStorage:', error);
         }
     }
+
+    clearAuthData() {
+        console.log('Clearing authentication data...');
+        // Clear all authentication-related data
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userEmail');
+        localStorage.removeItem('currentHouseholdId');
+        localStorage.removeItem('userId');
+        localStorage.removeItem('isAdmin');
+        localStorage.removeItem('hasCompletedOnboarding');
+        sessionStorage.clear();
+        
+        console.log('Authentication data cleared');
+        
+        // Show login screen via uiManager if available
+        if (window.uiManager && typeof window.uiManager.showLogin === 'function') {
+            window.uiManager.showLogin();
+        }
+    }
 }
 
 // Create global app instance if it doesn't exist

@@ -2,12 +2,12 @@ using backend.Models;
 
 namespace backend.Repositories;
 
-/// <summary>
+/// <summary>   
 /// Repository interface for reference data (Categories, StateParams, FinancialModules).
 /// </summary>
 public interface IReferenceDataRepository
 {
-    // Category operations
+    // Category operations  
     Task<Category?> GetCategoryByIdAsync(int id);
     Task<IEnumerable<Category>> GetAllCategoriesAsync();
 
