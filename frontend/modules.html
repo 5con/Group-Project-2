@@ -25,8 +25,8 @@
     <link rel="stylesheet" href="./styles/main.css">
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <!-- Navigation - Hidden by default, shown after authentication -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary d-none" id="main-navbar">
         <div class="container">
             <a class="navbar-brand" href="/">
                 <i class="bi bi-piggy-bank me-2"></i>
@@ -66,8 +66,36 @@
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <main class="container my-4">
+    <!-- Login Section - Hidden by default, shown when not authenticated -->
+    <section id="login-section" class="content-section d-none d-flex align-items-center min-vh-100">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-lg-6 col-md-8">
+                    <div class="card shadow-lg">
+                        <div class="card-header bg-primary text-white text-center">
+                            <h2 class="card-title mb-0">
+                                <i class="bi bi-key me-2"></i>
+                                Authentication Required
+                            </h2>
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="alert alert-warning" role="alert">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>Access Denied:</strong> Please login to access the Learning Modules.
+                            </div>
+                            <p class="mb-4">You need to be logged in to access the financial learning modules. Please log in from the main page.</p>
+                            <a href="index.html" class="btn btn-primary btn-lg">
+                                <i class="bi bi-box-arrow-left me-2"></i>Go to Login Page
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content - Hidden by default, shown after authentication -->
+    <main class="container my-4 d-none" id="main-content">
         <!-- Module Overview Header -->
         <div class="row mb-4">
             <div class="col-12">
@@ -193,6 +221,8 @@
     <script src="./scripts/auth.js"></script>
     <script src="./scripts/ui.js"></script>
     <script src="./scripts/api.js"></script>
+    <script src="./scripts/budget.js"></script>
+    <script src="./scripts/dashboard.js"></script>
     <script src="./scripts/modules.js"></script>
     <script src="./scripts/app.js"></script>
     <script src="./scripts/main.js"></script>

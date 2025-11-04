@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Storage - Financial Literacy Hub</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .success {
+            color: #28a745;
+            margin-top: 20px;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Clear Application Storage</h1>
+    <p>This will clear all stored user data and reset the application to the login screen.</p>
+
+    <button class="button" onclick="clearStorage()">Clear Storage</button>
+    <button class="button" onclick="window.location.href='index.html'">Go to Login</button>
+
+    <div id="message"></div>
+
+    <script>
+        function clearStorage() {
+            try {
+                localStorage.removeItem('userEmail');
+                localStorage.removeItem('currentHouseholdId');
+                localStorage.clear(); // Clear everything for good measure
+
+                document.getElementById('message').innerHTML =
+                    '<p class="success">✅ Storage cleared successfully! <a href="index.html">Click here to go to login</a></p>';
+            } catch (error) {
+                document.getElementById('message').innerHTML =
+                    '<p class="error">❌ Error clearing storage: ' + error.message + '</p>';
+            }
+        }
+
+        // Auto-clear on page load as well
+        window.addEventListener('load', function() {
+            clearStorage();
+        });
+    </script>
+</body>
+</html>

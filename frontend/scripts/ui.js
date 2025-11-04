@@ -29,6 +29,7 @@ class UIManager {
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
         const publicInfoSection = document.getElementById('public-info-section');
+        const mainNavbar = document.getElementById('main-navbar');
 
         // Only show login if we're on the index page (where these elements exist)
         if (!loginSection || !mainContent) {
@@ -36,8 +37,12 @@ class UIManager {
             return;
         }
 
+        // Show login section and hide main content and navigation
         loginSection.style.display = 'block';
         mainContent.classList.add('d-none');
+        if (mainNavbar) {
+            mainNavbar.classList.add('d-none');
+        }
         
         // Show public info section when not logged in
         if (publicInfoSection) {
@@ -66,11 +71,27 @@ class UIManager {
                 const email = document.getElementById('login-email').value;
                 const password = document.getElementById('login-password').value;
 
+                if (!email) {
+                    this.showAlert('Please enter an email address', 'danger');
+                    return;
+                }
+
+                if (!password) {
+                    this.showAlert('Please enter a password', 'danger');
+                    return;
+                }
+
                 try {
                     await authManager.handleLogin(email, password);
                     this.showMainApp();
                 } catch (error) {
-                    this.showAlert(error.message, 'danger');
+                    let errorMessage = 'Login failed. Please check your credentials and try again.';
+                    if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                        errorMessage = 'Invalid email or password. Please try again.';
+                    } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                        errorMessage = 'Network error. Please check your connection and try again.';
+                    }
+                    this.showAlert(errorMessage, 'danger');
                 }
             });
         }
@@ -95,7 +116,6 @@ class UIManager {
     showDeveloperLogin() {
         const devSection = document.getElementById('developer-login-section');
         if (!devSection) {
-            // Silently return - this is expected on pages other than index.html
             return;
         }
         devSection.style.display = devSection.style.display === 'none' ? 'block' : 'none';
@@ -105,6 +125,7 @@ class UIManager {
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
         const publicInfoSection = document.getElementById('public-info-section');
+        const mainNavbar = document.getElementById('main-navbar');
 
         // Only show main app if we're on the index page (where these elements exist)
         if (!loginSection || !mainContent) {
@@ -112,8 +133,12 @@ class UIManager {
             return;
         }
 
+        // Hide login section and show main content and navigation
         loginSection.style.display = 'none';
         mainContent.classList.remove('d-none');
+        if (mainNavbar) {
+            mainNavbar.classList.remove('d-none');
+        }
         
         // Hide public info section when logged in
         if (publicInfoSection) {
@@ -141,16 +166,18 @@ class UIManager {
     }
 
     populateUserEmail() {
-        if (authManager.getCurrentUser() && authManager.getCurrentUser().email) {
-            const emailInput = document.getElementById('email');
-            const userEmailDisplay = document.getElementById('user-email-display');
+        const emailInput = document.getElementById('email');
+        const userEmailDisplay = document.getElementById('user-email-display');
 
-            if (emailInput) {
-                emailInput.value = authManager.getCurrentUser().email;
-            }
-
-            if (userEmailDisplay) {
-                userEmailDisplay.textContent = authManager.getCurrentUser().email;
+        if (emailInput && userEmailDisplay) {
+            // Only set stored email if field is empty and we're not on account page during setup
+            if (!emailInput.value) {
+                const storedEmail = localStorage.getItem('userEmail');
+                if (storedEmail) {
+                    emailInput.value = storedEmail;
+                    userEmailDisplay.textContent = storedEmail;
+                }
+                // Don't set demo email - leave fields empty for new users
             }
         }
     }
@@ -370,6 +397,17 @@ class UIManager {
                 }
             });
         }
+
+        // Logout handler
+        const navLogout = document.getElementById('nav-logout');
+        if (navLogout) {
+            navLogout.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (confirm('Are you sure you want to logout?')) {
+                    this.clearAuthData();
+                }
+            });
+        }
     }
 
     // Global function for logout (called from HTML)
@@ -398,8 +436,7 @@ class UIManager {
     }
 
     clearAuthData() {
-        // Clear all authentication data and reset to clean state
-        authManager.logout();
+        // Clear all data and reset to clean state
         localStorage.clear(); // Clear everything including completed modules
         sessionStorage.clear(); // Clear session data too
         
@@ -409,12 +446,44 @@ class UIManager {
             profileText.textContent = 'Profile';
         }
         
-        this.showLogin();
+        // Hide navigation and show login
+        const mainNavbar = document.getElementById('main-navbar');
+        if (mainNavbar) {
+            mainNavbar.classList.add('d-none');
+        }
+
+        this.showLogin(); // Show login page after clearing data
     }
 
-    // Global function for showing developer login (called from HTML)
-    toggleDeveloperLogin() {
-        this.showDeveloperLogin();
+    // ============= EXPORT FUNCTIONALITY =============
+    
+    /**
+     * Setup export buttons
+     */
+    setupExportButtons() {
+        // Export budget button
+        const exportBudgetBtn = document.getElementById('export-budget-btn');
+        if (exportBudgetBtn) {
+            exportBudgetBtn.addEventListener('click', () => this.exportBudget());
+        }
+
+        // Export household button
+        const exportHouseholdBtn = document.getElementById('export-household-btn');
+        if (exportHouseholdBtn) {
+            exportHouseholdBtn.addEventListener('click', () => this.exportHousehold());
+        }
+
+        // Export goals button
+        const exportGoalsBtn = document.getElementById('export-goals-btn');
+        if (exportGoalsBtn) {
+            exportGoalsBtn.addEventListener('click', () => this.exportGoals());
+        }
+
+        // Export transactions button
+        const exportTransactionsBtn = document.getElementById('export-transactions-btn');
+        if (exportTransactionsBtn) {
+            exportTransactionsBtn.addEventListener('click', () => this.exportTransactions());
+        }
     }
 
     // Check if user is authenticated and redirect if not
@@ -455,18 +524,108 @@ class UIManager {
         
         return true;
     }
+
+    /**
+     * Export budget to CSV
+     */
+    async exportBudget() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            const currentDate = new Date();
+            const month = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            await apiManager.exportBudget(householdId, month, 'csv');
+            this.showSuccessAlert('Budget exported successfully!');
+        } catch (error) {
+            console.error('Error exporting budget:', error);
+            this.showErrorAlert('Failed to export budget');
+        }
+    }
+
+    /**
+     * Export household data to JSON
+     */
+    async exportHousehold() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            await apiManager.exportHouseholdData(householdId, 'json');
+            this.showSuccessAlert('Household data exported successfully!');
+        } catch (error) {
+            console.error('Error exporting household:', error);
+            this.showErrorAlert('Failed to export household data');
+        }
+    }
+
+    /**
+     * Export goals to CSV
+     */
+    async exportGoals() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            await apiManager.exportGoals(householdId, 'csv');
+            this.showSuccessAlert('Goals exported successfully!');
+        } catch (error) {
+            console.error('Error exporting goals:', error);
+            this.showErrorAlert('Failed to export goals');
+        }
+    }
+
+    /**
+     * Export transactions to CSV
+     */
+    async exportTransactions() {
+        const householdId = localStorage.getItem('householdId');
+        if (!householdId) {
+            this.showErrorAlert('No household selected');
+            return;
+        }
+
+        try {
+            await apiManager.exportTransactions(householdId, 'csv');
+            this.showSuccessAlert('Transactions exported successfully!');
+        } catch (error) {
+            console.error('Error exporting transactions:', error);
+            this.showErrorAlert('Failed to export transactions');
+        }
+    }
 }
 
-// Create global UI instance
-const uiManager = new UIManager();
+// Create global UI instance if it doesn't exist
+if (typeof window.uiManager === 'undefined') {
+    window.uiManager = new UIManager();
+}
 
-// Expose the class globally for other modules
-window.UIManager = UIManager;
+// Expose the class globally for other modules if it doesn't exist
+if (typeof window.UIManager === 'undefined') {
+    window.UIManager = UIManager;
+}
 
-// Expose utility functions globally for debugging/testing
-window.clearAuthData = () => uiManager.clearAuthData();
-window.logout = () => uiManager.logout();
-window.showDeveloperLogin = () => uiManager.showDeveloperLogin();
+// clearAuthData function is now defined in app.js
+
+// Add a global reset function for troubleshooting
+if (typeof window.resetApp === 'undefined') {
+    window.resetApp = () => {
+        console.log('Resetting application state...');
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = 'index.html';
+    };
+}
 
 // Add error handling and logging
 console.log('UIManager module loaded successfully');

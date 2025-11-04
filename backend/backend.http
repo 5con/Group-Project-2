@@ -4,3 +4,363 @@ GET {{backend_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###
+
+# Transaction Endpoints
+
+### Create Transaction
+POST {{backend_HostAddress}}/api/transaction
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "date": "2024-12-15T10:30:00",
+  "categoryId": 3,
+  "amount": 125.50,
+  "note": "Weekly grocery shopping at Trader Joe's"
+}
+
+###
+
+### Get Transaction by ID
+GET {{backend_HostAddress}}/api/transaction/1
+Accept: application/json
+
+###
+
+### Get All Transactions for Household
+GET {{backend_HostAddress}}/api/transaction/household/1
+Accept: application/json
+
+###
+
+### Get Transactions by Date Range
+GET {{backend_HostAddress}}/api/transaction/household/1?startDate=2024-12-01&endDate=2024-12-31
+Accept: application/json
+
+###
+
+### Get Transactions by Category
+GET {{backend_HostAddress}}/api/transaction/household/1?categoryId=3
+Accept: application/json
+
+###
+
+### Get Transactions for Specific Month
+GET {{backend_HostAddress}}/api/transaction/household/1/month/2024/12
+Accept: application/json
+
+###
+
+### Update Transaction
+PUT {{backend_HostAddress}}/api/transaction/1
+Content-Type: application/json
+
+{
+  "date": "2024-12-15T11:00:00",
+  "categoryId": 3,
+  "amount": 135.75,
+  "note": "Updated grocery amount"
+}
+
+###
+
+### Get Spending Summary
+GET {{backend_HostAddress}}/api/transaction/household/1/summary?startDate=2024-12-01&endDate=2024-12-31
+Accept: application/json
+
+###
+
+### Get Budget vs Actual Comparison
+GET {{backend_HostAddress}}/api/transaction/budget/1/vs-actual
+Accept: application/json
+
+###
+
+### Delete Transaction
+DELETE {{backend_HostAddress}}/api/transaction/1
+
+###
+
+# Module Progress Endpoints
+
+### Get All Financial Modules
+GET {{backend_HostAddress}}/api/referencedata/financial-modules
+Accept: application/json
+
+###
+
+### Get Financial Modules with User Progress
+GET {{backend_HostAddress}}/api/referencedata/financial-modules/user/2
+Accept: application/json
+
+###
+
+### Get User Learning Progress Overview
+GET {{backend_HostAddress}}/api/referencedata/financial-modules/user/2/progress
+Accept: application/json
+
+###
+
+### Update Module Progress
+POST {{backend_HostAddress}}/api/referencedata/financial-modules/progress
+Content-Type: application/json
+
+{
+  "userId": 2,
+  "moduleId": 1,
+  "progressPercentage": 50,
+  "isCompleted": false
+}
+
+###
+
+### Mark Module as Complete
+POST {{backend_HostAddress}}/api/referencedata/financial-modules/progress
+Content-Type: application/json
+
+{
+  "userId": 2,
+  "moduleId": 1,
+  "progressPercentage": 100,
+  "isCompleted": true
+}
+
+###
+
+### Get Specific Module Progress
+GET {{backend_HostAddress}}/api/referencedata/financial-modules/1/user/2/progress
+Accept: application/json
+
+###
+
+### Delete Module Progress
+DELETE {{backend_HostAddress}}/api/referencedata/financial-modules/1/user/2/progress
+
+###
+
+# Enhanced Budget & Debt Endpoints
+
+### Generate Debt Avalanche Projection
+POST {{backend_HostAddress}}/api/budget/debt/avalanche
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "monthlySurplus": 500
+}
+
+###
+
+### Compare Snowball vs Avalanche Methods
+POST {{backend_HostAddress}}/api/budget/debt/compare
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "monthlySurplus": 500
+}
+
+###
+
+### Get 12-Month Budget Projection
+GET {{backend_HostAddress}}/api/budget/1/projection/12-month
+Accept: application/json
+
+###
+
+### Validate Budget Against Guardrails
+POST {{backend_HostAddress}}/api/budget/validate
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "categoryAmounts": {
+    "1": 2500,
+    "2": 150,
+    "3": 400,
+    "4": 200,
+    "9": 300,
+    "10": 150
+  }
+}
+
+###
+
+### Check Budget Guardrails Only
+POST {{backend_HostAddress}}/api/budget/guardrails
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "categoryAmounts": {
+    "1": 3000,
+    "3": 600
+  }
+}
+
+###
+
+### Get Reallocation Suggestions
+POST {{backend_HostAddress}}/api/budget/suggestions
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "categoryAmounts": {
+    "1": 2500,
+    "3": 500,
+    "9": 600,
+    "10": 400
+  }
+}
+
+###
+
+# Goal Management Endpoints
+
+### Create Goal
+POST {{backend_HostAddress}}/api/goal
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "type": "emergency_fund",
+  "name": "Emergency Fund - 6 Months",
+  "targetAmount": 30000,
+  "targetDate": "2025-12-31",
+  "priority": 1
+}
+
+###
+
+### Get Goal by ID
+GET {{backend_HostAddress}}/api/goal/1
+Accept: application/json
+
+###
+
+### Get All Household Goals
+GET {{backend_HostAddress}}/api/goal/household/1
+Accept: application/json
+
+###
+
+### Get Goals by Type
+GET {{backend_HostAddress}}/api/goal/household/1?type=emergency_fund
+Accept: application/json
+
+###
+
+### Get Goal Dashboard
+GET {{backend_HostAddress}}/api/goal/household/1/dashboard
+Accept: application/json
+
+###
+
+### Update Goal
+PUT {{backend_HostAddress}}/api/goal/1
+Content-Type: application/json
+
+{
+  "type": "emergency_fund",
+  "name": "Emergency Fund - Updated",
+  "targetAmount": 35000,
+  "targetDate": "2026-06-30",
+  "priority": 1
+}
+
+###
+
+### Delete Goal
+DELETE {{backend_HostAddress}}/api/goal/1
+
+###
+
+# Dashboard & Recommendations Endpoints
+
+### Get Top Actions
+GET {{backend_HostAddress}}/api/dashboard/household/1/top-actions
+Accept: application/json
+
+###
+
+### Get Contextual Tips
+GET {{backend_HostAddress}}/api/dashboard/household/1/tips
+Accept: application/json
+
+###
+
+### Get Benchmark Comparison
+GET {{backend_HostAddress}}/api/dashboard/household/1/benchmarks?budgetId=1
+Accept: application/json
+
+###
+
+### Get Quick Wins
+GET {{backend_HostAddress}}/api/dashboard/household/1/quick-wins
+Accept: application/json
+
+###
+
+### Get Financial Health Score
+GET {{backend_HostAddress}}/api/dashboard/household/1/health-score
+Accept: application/json
+
+###
+
+### Get Complete Dashboard Recommendations
+GET {{backend_HostAddress}}/api/dashboard/household/1/recommendations?budgetId=1
+Accept: application/json
+
+###
+
+### Live Budget Recalculation
+POST {{backend_HostAddress}}/api/budget/recalculate
+Content-Type: application/json
+
+{
+  "householdId": 1,
+  "categoryAmounts": {
+    "1": 2500,
+    "2": 150,
+    "3": 400,
+    "4": 200,
+    "9": 300,
+    "10": 150,
+    "14": 200
+  }
+}
+
+###
+
+# Export Endpoints
+
+### Export Transactions to CSV
+GET {{backend_HostAddress}}/api/export/transactions/1/csv?startDate=2024-01-01&endDate=2024-12-31
+Accept: text/csv
+
+###
+
+### Export All Transactions to CSV
+GET {{backend_HostAddress}}/api/export/transactions/1/csv
+Accept: text/csv
+
+###
+
+### Export Budget to CSV
+GET {{backend_HostAddress}}/api/export/budget/1/csv
+Accept: text/csv
+
+###
+
+### Export Household to JSON
+GET {{backend_HostAddress}}/api/export/household/1/json
+Accept: application/json
+
+###
+
+### Export Goals to CSV
+GET {{backend_HostAddress}}/api/export/goals/1/csv
+Accept: text/csv
+
+###

@@ -21,7 +21,10 @@ class DashboardManager {
             this.householdData = await apiManager.loadHouseholdData(this.financialApp.currentHouseholdId);
             console.log('Household data loaded:', this.householdData);
 
-            // Load the latest budget for this household
+            // Update basic dashboard cards with household data
+            this.updateDashboardCards(this.householdData);
+
+            // Try to load existing budget data
             const currentDate = new Date();
             const budgetData = await apiManager.loadBudgetData(this.financialApp.currentHouseholdId, `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`);
 
@@ -34,15 +37,23 @@ class DashboardManager {
                 // Update dashboard with budget data
                 this.updateDashboardWithBudget(latestBudget);
 
-                // Show success message about budget generation
-                uiManager.showSuccessAlert('Your personalized budget has been generated! Review and customize it using the budget builder.');
+                // Show success message about budget being loaded
+                uiManager.showSuccessAlert('Your budget has been loaded successfully!');
             } else {
-                console.warn('No budget data found, generating new budget...');
-                await this.generateNewBudget();
+                console.log('No existing budget found, showing empty state');
+                this.showBudgetEmptyState();
             }
         } catch (error) {
-            console.error('Error loading budget data:', error);
-            uiManager.showErrorAlert('Error loading your budget. Please try refreshing the page.');
+            console.error('Error loading household data:', error);
+            
+            let errorMessage = 'Error loading your data. Please try refreshing the page.';
+            if (error.message.includes('household') || error.message.includes('not found')) {
+                errorMessage = 'Account data not found. Please complete onboarding or contact support.';
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = 'Connection error. Please check if the server is running and try again.';
+            }
+            
+            uiManager.showErrorAlert(errorMessage);
         }
     }
 
@@ -89,9 +100,20 @@ class DashboardManager {
             }
 
             this.householdData = householdData;
+            // Store household data in the main app for other components to use
+            this.financialApp.householdData = householdData;
+            
             this.updateDashboardCards(householdData);
+            
+            // Also load current budget if it exists and update dashboard with it
+            if (this.financialApp.currentBudget) {
+                this.updateDashboardWithBudget(this.financialApp.currentBudget);
+            }
+            
             this.loadBudgetOverview();
             this.loadMonthlyTrends();
+            
+            console.log('Dashboard data loading completed successfully');
         } catch (error) {
             console.error('ERROR loading dashboard data:', error);
             console.error('Error details:', {
@@ -105,11 +127,89 @@ class DashboardManager {
     }
 
     updateDashboardCards(householdData) {
-        // Calculate and update dashboard summary cards
-        const totalIncome = householdData.incomes?.reduce((sum, income) => sum + income.grossAmount, 0) || 0;
+        console.log('Updating dashboard cards with household data:', householdData);
+        
+        // Calculate total monthly income
+        let totalMonthlyIncome = 0;
+        if (householdData.incomes && householdData.incomes.length > 0) {
+            totalMonthlyIncome = householdData.incomes.reduce((sum, income) => {
+                let monthlyAmount = income.grossAmount || 0;
+                
+                // Convert to monthly based on cadence
+                switch (income.cadence?.toLowerCase()) {
+                    case 'weekly':
+                        monthlyAmount = monthlyAmount * 4.33;
+                        break;
+                    case 'biweekly':
+                        monthlyAmount = monthlyAmount * 2.17;
+                        break;
+                    case 'semimonthly':
+                        monthlyAmount = monthlyAmount * 2;
+                        break;
+                    case 'monthly':
+                    default:
+                        // Already monthly
+                        break;
+                }
+                
+                return sum + monthlyAmount;
+            }, 0);
+        }
 
-        document.getElementById('total-income').textContent = `$${totalIncome.toFixed(2)}`;
-        // Other dashboard card updates would go here
+        // Calculate estimated net income (rough estimate - 20% taxes)
+        const estimatedTaxRate = 0.20; // Default 20% if no state data
+        const estimatedTax = totalMonthlyIncome * estimatedTaxRate;
+        const netIncome = totalMonthlyIncome - estimatedTax;
+
+        // Update income cards
+        const totalIncomeElement = document.getElementById('total-income');
+        if (totalIncomeElement) {
+            totalIncomeElement.textContent = `$${totalMonthlyIncome.toFixed(2)}`;
+        }
+
+        const netIncomeElement = document.getElementById('net-income');
+        if (netIncomeElement) {
+            netIncomeElement.textContent = `$${netIncome.toFixed(2)}`;
+        }
+
+        // Calculate total budgeted (if budget exists)
+        let totalBudgeted = 0;
+        if (this.financialApp.currentBudget && this.financialApp.currentBudget.budgetItems) {
+            totalBudgeted = this.financialApp.currentBudget.budgetItems.reduce((sum, item) => {
+                return sum + (item.plannedAmount || 0);
+            }, 0);
+        } else if (this.financialApp.currentBudget && this.financialApp.currentBudget.summary) {
+            totalBudgeted = this.financialApp.currentBudget.summary.totalBudgeted || 0;
+        }
+
+        const budgetedElement = document.getElementById('total-budgeted');
+        if (budgetedElement) {
+            budgetedElement.textContent = `$${totalBudgeted.toFixed(2)}`;
+        }
+
+        // Calculate remaining budget
+        const remaining = netIncome - totalBudgeted;
+        const remainingElement = document.getElementById('remaining-budget');
+        if (remainingElement) {
+            remainingElement.textContent = `$${remaining.toFixed(2)}`;
+            
+            // Update card color based on remaining amount
+            const card = remainingElement.closest('.card');
+            if (card) {
+                card.className = remaining >= 0 ? 'card bg-success text-white' : 'card bg-danger text-white';
+            }
+        }
+
+        // Store calculated values for other methods
+        this.calculatedNetIncome = netIncome;
+        this.calculatedTotalIncome = totalMonthlyIncome;
+
+        console.log('Dashboard cards updated:', {
+            totalMonthlyIncome: totalMonthlyIncome.toFixed(2),
+            netIncome: netIncome.toFixed(2),
+            totalBudgeted: totalBudgeted.toFixed(2),
+            remaining: remaining.toFixed(2)
+        });
     }
 
     updateDashboardWithBudget(budgetData) {
@@ -162,9 +262,10 @@ class DashboardManager {
         console.log('Updating budget categories display with:', budgetItems);
 
         // Group budget items by category type
-        const needsItems = budgetItems?.filter(item => item.category?.isNeed) || [];
-        const wantsItems = budgetItems?.filter(item => !item.category?.isNeed && !item.category?.name?.toLowerCase().includes('debt') && !item.category?.name?.toLowerCase().includes('emergency') && !item.category?.name?.toLowerCase().includes('retirement')) || [];
-        const savingsDebtItems = budgetItems?.filter(item => item.category?.name?.toLowerCase().includes('debt') || item.category?.name?.toLowerCase().includes('emergency') || item.category?.name?.toLowerCase().includes('retirement')) || [];
+        const items = budgetItems || [];
+        const needsItems = items.filter(item => item.category?.isNeed);
+        const wantsItems = items.filter(item => !item.category?.isNeed && !item.category?.name?.toLowerCase().includes('debt') && !item.category?.name?.toLowerCase().includes('emergency') && !item.category?.name?.toLowerCase().includes('retirement'));
+        const savingsDebtItems = items.filter(item => item.category?.name?.toLowerCase().includes('debt') || item.category?.name?.toLowerCase().includes('emergency') || item.category?.name?.toLowerCase().includes('retirement'));
 
         // Update the budget breakdown cards
         this.updateBudgetBreakdownCards(needsItems, wantsItems, savingsDebtItems);
@@ -239,6 +340,55 @@ class DashboardManager {
         this.updateDebtNextAction(projection);
     }
 
+    showBudgetEmptyState() {
+        // Show empty state when no budget data is available
+        console.log('Showing budget empty state');
+        
+        // Update budget totals to show zeros
+        const totalBudgetedElement = document.getElementById('total-budgeted');
+        if (totalBudgetedElement) {
+            totalBudgetedElement.textContent = '$0.00';
+        }
+
+        // Show create budget call-to-action in budget breakdown section
+        const budgetBreakdownSection = document.querySelector('.budget-breakdown');
+        if (budgetBreakdownSection) {
+            const container = budgetBreakdownSection.querySelector('.row') || budgetBreakdownSection;
+            container.innerHTML = `
+                <div class="col-12 mb-4">
+                    <div class="card bg-light border-primary">
+                        <div class="card-body text-center p-4">
+                            <i class="bi bi-wallet2 display-4 text-primary mb-3"></i>
+                            <h3 class="card-title">Create Your First Budget</h3>
+                            <p class="card-text text-muted">
+                                Get started by creating a personalized budget. We'll help you allocate your income 
+                                across needs, wants, and savings based on proven budgeting methods.
+                            </p>
+                            <div class="mt-4">
+                                <a href="budget.html" class="btn btn-primary btn-lg me-2">
+                                    <i class="bi bi-magic me-2"></i>Create Budget
+                                </a>
+                                <button class="btn btn-outline-primary btn-lg" onclick="dashboardManager.generateNewBudget()">
+                                    <i class="bi bi-lightning me-2"></i>Quick Generate
+                                </button>
+                            </div>
+                            <p class="small text-muted mt-3 mb-0">
+                                Takes less than 2 minutes to set up your personalized budget
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Show empty states for other sections
+        this.showEmptyDebtState();
+        this.showEmptyProjectionState();
+
+        // Update contextual tips for new users
+        this.updateContextualTipsForNewUser();
+    }
+
     showEmptyDebtState() {
         // Show empty state when no debt data is available
         const debtFocusBadge = document.getElementById('current-debt-focus');
@@ -300,7 +450,7 @@ class DashboardManager {
             progressFill.style.width = `${progressPercentage}%`;
         }
 
-        // Update milestones (simplified for demo - would be more sophisticated in real implementation)
+        // Update milestones
         this.updateDebtMilestones(projection);
     }
 
@@ -442,7 +592,7 @@ class DashboardManager {
         const monthlyProjection = document.getElementById('monthly-projection');
         if (!monthlyProjection) return;
 
-        // Generate sample monthly projection data (in real implementation, this would come from backend)
+        // Generate monthly projection data
         const months = [];
         const netIncome = this.financialApp.currentBudget?.summary?.netIncome || 0;
 
@@ -587,6 +737,31 @@ class DashboardManager {
 
         // Update next milestone tip
         this.updateNextMilestoneTip();
+    }
+
+    updateContextualTipsForNewUser() {
+        console.log('Updating contextual tips for new user');
+
+        // Update budget performance tip for new users
+        const budgetPerformanceTip = document.getElementById('budget-performance-tip');
+        if (budgetPerformanceTip) {
+            budgetPerformanceTip.textContent = 'Create your first budget to see personalized performance insights and recommendations.';
+        }
+
+        // Update emergency fund tip for new users
+        const emergencyFundTip = document.getElementById('emergency-fund-tip');
+        if (emergencyFundTip) {
+            emergencyFundTip.textContent = 'Start with a $1,000 beginner emergency fund, then work toward 3-6 months of expenses.';
+        }
+
+        // Update state comparison tip
+        this.updateStateComparisonTip();
+
+        // Update next milestone tip for new users
+        const nextMilestoneTip = document.getElementById('next-milestone-tip');
+        if (nextMilestoneTip) {
+            nextMilestoneTip.textContent = 'Your first milestone: Create a budget to track your income and expenses effectively.';
+        }
     }
 
     updateBudgetPerformanceTip() {
@@ -816,7 +991,387 @@ class DashboardManager {
             day: 'numeric'
         }).format(new Date(date));
     }
+
+    // ============= RECOMMENDATION & INSIGHTS FEATURES =============
+
+    /**
+     * Load and display top recommended actions
+     */
+    async loadTopActions() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const actions = await apiManager.getTopActions(this.financialApp.currentHouseholdId);
+            this.displayTopActions(actions);
+        } catch (error) {
+            console.error('Error loading top actions:', error);
+        }
+    }
+
+    /**
+     * Display top recommended actions
+     */
+    displayTopActions(actions) {
+        const container = document.getElementById('top-actions');
+        if (!container) return;
+
+        if (!actions || actions.length === 0) {
+            container.innerHTML = '<p class="text-muted">No recommendations available at this time.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-lightbulb me-2"></i>Top 3 Actions</h5>
+                </div>
+                <div class="list-group list-group-flush">
+                    ${actions.slice(0, 3).map((action, index) => `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">
+                                    <span class="badge bg-primary me-2">${index + 1}</span>
+                                    ${action.title}
+                                </h6>
+                                <small class="text-${action.priority === 'High' ? 'danger' : action.priority === 'Medium' ? 'warning' : 'info'}">
+                                    ${action.priority} Priority
+                                </small>
+                            </div>
+                            <p class="mb-1">${action.description}</p>
+                            ${action.estimatedImpact ? `
+                                <small class="text-success">
+                                    <i class="bi bi-graph-up-arrow me-1"></i>
+                                    Potential impact: ${this.formatCurrency(action.estimatedImpact)}
+                                </small>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display financial tips
+     */
+    async loadFinancialTips() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const tips = await apiManager.getFinancialTips(this.financialApp.currentHouseholdId);
+            this.displayFinancialTips(tips);
+        } catch (error) {
+            console.error('Error loading financial tips:', error);
+        }
+    }
+
+    /**
+     * Display financial tips
+     */
+    displayFinancialTips(tips) {
+        const container = document.getElementById('financial-tips');
+        if (!container) return;
+
+        if (!tips || tips.length === 0) {
+            container.innerHTML = '<p class="text-muted">No tips available.</p>';
+            return;
+        }
+
+        container.innerHTML = tips.map(tip => `
+            <div class="alert alert-${tip.category === 'Warning' ? 'warning' : 'info'} alert-dismissible fade show" role="alert">
+                <i class="bi bi-${tip.category === 'Warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                <strong>${tip.category}:</strong> ${tip.message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * Load and display benchmark comparison
+     */
+    async loadBenchmarkComparison() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const comparison = await apiManager.getBenchmarkComparison(this.financialApp.currentHouseholdId);
+            this.displayBenchmarkComparison(comparison);
+        } catch (error) {
+            console.error('Error loading benchmark comparison:', error);
+        }
+    }
+
+    /**
+     * Display benchmark comparison chart
+     */
+    displayBenchmarkComparison(comparison) {
+        const container = document.getElementById('benchmark-comparison');
+        if (!container) return;
+
+        const { categories } = comparison;
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>You vs. Similar Households</h5>
+                </div>
+                <div class="card-body">
+                    ${categories.map(cat => `
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>${cat.categoryName}</span>
+                                <span>
+                                    <strong class="text-${cat.status === 'Above' ? 'danger' : cat.status === 'Below' ? 'success' : 'primary'}">
+                                        ${cat.userPercentage.toFixed(1)}%
+                                    </strong>
+                                    <span class="text-muted">vs ${cat.benchmarkPercentage.toFixed(1)}%</span>
+                                </span>
+                            </div>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar bg-primary" style="width: ${cat.userPercentage}%" 
+                                     title="Your spending: ${cat.userPercentage.toFixed(1)}%">
+                                    You
+                                </div>
+                            </div>
+                            <div class="progress" style="height: 6px; margin-top: 2px;">
+                                <div class="progress-bar bg-secondary" style="width: ${cat.benchmarkPercentage}%" 
+                                     title="Benchmark: ${cat.benchmarkPercentage.toFixed(1)}%"></div>
+                            </div>
+                            ${cat.message ? `<small class="text-muted">${cat.message}</small>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display quick wins
+     */
+    async loadQuickWins() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const wins = await apiManager.getQuickWins(this.financialApp.currentHouseholdId);
+            this.displayQuickWins(wins);
+        } catch (error) {
+            console.error('Error loading quick wins:', error);
+        }
+    }
+
+    /**
+     * Display quick wins
+     */
+    displayQuickWins(wins) {
+        const container = document.getElementById('quick-wins');
+        if (!container) return;
+
+        if (!wins || wins.length === 0) {
+            container.innerHTML = '<p class="text-muted">No quick wins identified yet.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="row">
+                ${wins.map(win => `
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 border-success">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="bi bi-trophy text-success me-2"></i>
+                                    ${win.title}
+                                </h6>
+                                <p class="card-text">${win.description}</p>
+                                ${win.potentialSavings ? `
+                                    <p class="text-success mb-0">
+                                        <strong>Save: ${this.formatCurrency(win.potentialSavings)}</strong>
+                                    </p>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display financial health score
+     */
+    async loadHealthScore() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const scoreData = await apiManager.getFinancialHealthScore(this.financialApp.currentHouseholdId);
+            this.displayHealthScore(scoreData);
+        } catch (error) {
+            console.error('Error loading health score:', error);
+        }
+    }
+
+    /**
+     * Display financial health score
+     */
+    displayHealthScore(scoreData) {
+        const container = document.getElementById('health-score');
+        if (!container) return;
+
+        const { score, factors } = scoreData;
+        const scoreColor = score >= 75 ? 'success' : score >= 50 ? 'warning' : 'danger';
+        const scoreLabel = score >= 75 ? 'Good' : score >= 50 ? 'Fair' : 'Needs Improvement';
+
+        container.innerHTML = `
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Financial Health Score</h5>
+                    <div class="my-4">
+                        <div class="position-relative d-inline-block">
+                            <svg width="200" height="200" class="circular-progress">
+                                <circle cx="100" cy="100" r="90" fill="none" stroke="#e9ecef" stroke-width="12"/>
+                                <circle cx="100" cy="100" r="90" fill="none" 
+                                        stroke="${scoreColor === 'success' ? '#28a745' : scoreColor === 'warning' ? '#ffc107' : '#dc3545'}" 
+                                        stroke-width="12"
+                                        stroke-dasharray="${(score / 100) * 565.48} 565.48"
+                                        stroke-linecap="round"
+                                        transform="rotate(-90 100 100)"/>
+                            </svg>
+                            <div class="position-absolute top-50 start-50 translate-middle">
+                                <h2 class="text-${scoreColor} mb-0">${score}</h2>
+                                <p class="text-muted mb-0">${scoreLabel}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-start">
+                        <h6>Score Factors:</h6>
+                        <ul class="list-unstyled">
+                            ${factors.map(factor => `
+                                <li class="mb-2">
+                                    <div class="d-flex justify-content-between">
+                                        <span>${factor.name}</span>
+                                        <span class="text-${factor.score >= 7 ? 'success' : factor.score >= 4 ? 'warning' : 'danger'}">
+                                            ${factor.score}/10
+                                        </span>
+                                    </div>
+                                    <div class="progress" style="height: 4px;">
+                                        <div class="progress-bar bg-${factor.score >= 7 ? 'success' : factor.score >= 4 ? 'warning' : 'danger'}" 
+                                             style="width: ${factor.score * 10}%"></div>
+                                    </div>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Load and display goals dashboard
+     */
+    async loadGoalsDashboard() {
+        if (!this.financialApp.currentHouseholdId) return;
+
+        try {
+            const goalDashboard = await apiManager.getGoalDashboard(this.financialApp.currentHouseholdId);
+            this.displayGoalsDashboard(goalDashboard);
+        } catch (error) {
+            console.error('Error loading goals dashboard:', error);
+        }
+    }
+
+    /**
+     * Display goals dashboard
+     */
+    displayGoalsDashboard(dashboard) {
+        const container = document.getElementById('goals-dashboard');
+        if (!container) return;
+
+        const { goals, summary } = dashboard;
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bullseye me-2"></i>Goals Progress</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">Total Goals</p>
+                            <h6>${summary.totalGoals}</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">On Track</p>
+                            <h6 class="text-success">${summary.onTrackCount}</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1 text-muted">At Risk</p>
+                            <h6 class="text-danger">${summary.atRiskCount}</h6>
+                        </div>
+                    </div>
+                    <div class="goals-list">
+                        ${goals.slice(0, 5).map(goal => `
+                            <div class="card mb-2">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <h6 class="mb-0">${goal.name}</h6>
+                                        <span class="badge bg-${goal.status === 'OnTrack' ? 'success' : goal.status === 'AtRisk' ? 'warning' : 'secondary'}">
+                                            ${goal.status}
+                                        </span>
+                                    </div>
+                                    <div class="progress mb-2" style="height: 8px;">
+                                        <div class="progress-bar bg-${goal.progressPercentage >= 75 ? 'success' : goal.progressPercentage >= 50 ? 'warning' : 'danger'}" 
+                                             style="width: ${goal.progressPercentage}%"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between small text-muted">
+                                        <span>${this.formatCurrency(goal.currentAmount)} / ${this.formatCurrency(goal.targetAmount)}</span>
+                                        <span>${goal.progressPercentage.toFixed(0)}% complete</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Initialize all dashboard enhancements
+     */
+    async initializeDashboardEnhancements() {
+        await Promise.all([
+            this.loadTopActions(),
+            this.loadFinancialTips(),
+            this.loadBenchmarkComparison(),
+            this.loadQuickWins(),
+            this.loadHealthScore(),
+            this.loadGoalsDashboard()
+        ]);
+    }
 }
 
 // Create global dashboard manager instance
 let dashboardManager;
+
+// Safe auto-initializer: ensure dashboardManager is created when financialApp becomes available
+if (typeof window.dashboardManager === 'undefined') {
+    if (typeof window !== 'undefined' && window.financialApp) {
+        try {
+            window.dashboardManager = new DashboardManager(window.financialApp);
+            console.log('Dashboard manager auto-initialized (immediate)');
+        } catch (err) {
+            console.error('Failed to auto-initialize dashboardManager immediately:', err);
+        }
+    } else {
+        // Defer until DOMContentLoaded so that app.js or inline initializers can run first
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof window.dashboardManager === 'undefined' && window.financialApp && typeof DashboardManager !== 'undefined') {
+                try {
+                    window.dashboardManager = new DashboardManager(window.financialApp);
+                    console.log('Dashboard manager auto-initialized on DOMContentLoaded');
+                } catch (err) {
+                    console.error('Failed to auto-initialize dashboardManager on DOMContentLoaded:', err);
+                }
+            }
+        });
+    }
+}

@@ -39,10 +39,163 @@ class FinancialApp {
             
             console.log('[APP.INIT] Starting app initialization...');
 
+            const isAccountPage = window.location.pathname.includes('account.html');
+            const isOnboardingPage = window.location.pathname.includes('onboarding.html');
+
+            if (isAccountPage) {
+                console.log('On account page - skipping auth checks, loading reference data only');
+                await this.loadReferenceData();
+                return; // Let account.js handle the rest
+            }
+
+            if (isOnboardingPage) {
+                console.log('On onboarding page - skipping auth checks, loading reference data only');
+                await this.loadReferenceData();
+                return; // Let onboarding.js handle the rest
+            }
+
             // Check if managers are available
-            if (!authManager || !uiManager || !apiManager) {
+            if (!window.uiManager || !window.apiManager) {
                 throw new Error('Required managers not initialized. Check console for module loading errors.');
             }
+
+            // Check authentication state
+            let authToken, userEmail, currentHouseholdId, userId, isAdmin, hasCompletedOnboarding;
+
+            try {
+                // Check for authentication token
+                authToken = localStorage.getItem('authToken');
+                userEmail = localStorage.getItem('userEmail');
+                currentHouseholdId = localStorage.getItem('currentHouseholdId');
+                userId = localStorage.getItem('userId');
+                isAdmin = localStorage.getItem('isAdmin') === 'True';
+                hasCompletedOnboarding = localStorage.getItem('hasCompletedOnboarding') === 'true';
+            } catch (storageError) {
+                console.error('Error accessing localStorage:', storageError);
+                // Clear potentially corrupted localStorage data
+                this.clearCorruptedStorage();
+                authToken = null;
+                userEmail = null;
+                currentHouseholdId = null;
+                userId = null;
+                isAdmin = false;
+                hasCompletedOnboarding = false;
+            }
+
+            console.log('Authentication check:');
+            console.log('- authToken:', authToken ? 'Present' : 'Missing');
+            console.log('- userEmail:', userEmail);
+            console.log('- currentHouseholdId:', currentHouseholdId);
+            console.log('- userId:', userId);
+            console.log('- isAdmin:', isAdmin);
+            console.log('- hasCompletedOnboarding:', hasCompletedOnboarding);
+
+            // If no token, user needs to login
+            if (!authToken) {
+                console.log('No authentication token found, showing login screen');
+                // Show login screen on current page instead of redirecting
+                uiManager.showLogin();
+                return;
+            }
+
+            // Validate token with backend
+            console.log('Validating authentication token...');
+            try {
+                const validationResult = await apiManager.validateToken(authToken);
+
+                if (!validationResult) {
+                    console.log('Token validation failed, showing login screen');
+                    this.clearAuthData();
+                    uiManager.showLogin();
+                    return;
+                }
+
+                // Update local storage with fresh data from validation
+                if (validationResult.email) {
+                    localStorage.setItem('userEmail', validationResult.email);
+                    userEmail = validationResult.email;
+                }
+                if (validationResult.currentHouseholdId) {
+                    localStorage.setItem('currentHouseholdId', String(validationResult.currentHouseholdId));
+                    currentHouseholdId = String(validationResult.currentHouseholdId);
+                }
+                if (validationResult.userId) {
+                    localStorage.setItem('userId', String(validationResult.userId));
+                    userId = String(validationResult.userId);
+                }
+                if (validationResult.isAdmin !== undefined) {
+                    localStorage.setItem('isAdmin', String(validationResult.isAdmin));
+                    isAdmin = validationResult.isAdmin;
+                }
+                if (validationResult.hasCompletedOnboarding !== undefined) {
+                    localStorage.setItem('hasCompletedOnboarding', String(validationResult.hasCompletedOnboarding));
+                    hasCompletedOnboarding = validationResult.hasCompletedOnboarding;
+                }
+
+                console.log('Token validation successful, user authenticated');
+            } catch (error) {
+                console.error('Token validation error:', error);
+                this.clearAuthData();
+                uiManager.showLogin();
+                return;
+            }
+
+            if (!userEmail) {
+                console.log('No email after token validation, showing login screen');
+                this.clearAuthData();
+                uiManager.showLogin();
+                return;
+            }
+
+            // Check if user has completed onboarding
+            if (!hasCompletedOnboarding) {
+                console.log('User has not completed onboarding, redirecting to onboarding');
+                window.location.href = 'onboarding.html';
+                return;
+            }
+
+            // Resolve household by email if missing from storage (for users who completed onboarding)
+            if (!currentHouseholdId) {
+                console.log('No household in storage; attempting lookup by email');
+                try {
+                    const res = await fetch(`http://localhost:5267/api/onboarding/household/by-email/${encodeURIComponent(userEmail)}`);
+                    if (res.ok) {
+                        const hh = await res.json();
+                        currentHouseholdId = String(hh.id || hh.Id);
+                        localStorage.setItem('currentHouseholdId', currentHouseholdId);
+                    } else {
+                        console.log('No household found for user, redirecting to onboarding');
+                        window.location.href = 'onboarding.html';
+                        return;
+                    }
+                } catch (err) {
+                    console.error('Error looking up household:', err);
+                    // If there's an error, redirect to onboarding as a safe fallback
+                    window.location.href = 'onboarding.html';
+                    return;
+                }
+            }
+
+            // Validate that the stored household ID is actually valid by trying to load household data
+            console.log('Validating stored household ID...');
+            try {
+                const testHouseholdData = await apiManager.loadHouseholdData(currentHouseholdId);
+                if (!testHouseholdData || !testHouseholdData.id) {
+                    console.log('Invalid household data, clearing localStorage and showing login screen');
+                    this.clearCorruptedStorage();
+                    uiManager.showLogin();
+                    return;
+                }
+                console.log('Household ID is valid, proceeding with app initialization');
+            } catch (error) {
+                console.log('Error validating household ID, clearing localStorage and showing login screen:', error.message);
+                this.clearCorruptedStorage();
+                uiManager.showLogin();
+                return;
+            }
+
+            // User is authenticated and has household data, load the app
+            console.log('User authenticated with household data, loading application...');
 
             // Load reference data first before showing any UI
             console.log('[APP.INIT] Loading reference data before showing UI...');
@@ -76,6 +229,12 @@ class FinancialApp {
                 console.log('[APP.INIT] Showing login screen for unauthenticated user');
                 uiManager.showLogin();
             }
+
+            // Setup event listeners after managers are initialized
+            // Use a small delay to ensure managers are ready
+            setTimeout(() => {
+                this.setupEventListeners();
+            }, 50);
 
             console.log('App initialization completed successfully');
         } catch (error) {
@@ -164,8 +323,17 @@ class FinancialApp {
             } else {
                 uiManager.showErrorAlert('Error checking user status. Please try refreshing the page.');
             }
+        } catch (error) {
+            console.error('CRITICAL ERROR during app initialization:', error);
+            if (window.uiManager && window.uiManager.hideLoading) {
+                window.uiManager.hideLoading();
+            }
+            if (window.uiManager && window.uiManager.showErrorAlert) {
+                window.uiManager.showErrorAlert('Failed to initialize application: ' + error.message);
+            }
         }
     }
+
 
     async loadReferenceData() {
         try {
@@ -303,9 +471,14 @@ class FinancialApp {
         ];
     }
 
-    populateStateDropdown() {
-        const stateSelect = document.getElementById('state');
+    populateStateDropdown(dropdownId = 'state') {
+        console.log('=== POPULATING STATE DROPDOWN ===');
+        console.log('populateStateDropdown called');
+        console.log('financialApp instance:', this);
+        console.log('financialApp.states:', this.states);
+        console.log('financialApp.states length:', this.states ? this.states.length : 'undefined');
 
+        const stateSelect = document.getElementById(dropdownId);
         // Only populate if we're on a page that has the state dropdown (index.html)
         if (!stateSelect) {
             // Silently return - this is expected on pages other than index.html
@@ -316,10 +489,12 @@ class FinancialApp {
         console.log('populateStateDropdown called');
 
         console.log(`Current states array length: ${this.states ? this.states.length : 'undefined'}`);
+        
         stateSelect.innerHTML = '<option value="">Select your state...</option>';
 
         if (!this.states || this.states.length === 0) {
             console.error('No states data available to populate dropdown');
+            console.error('States array:', this.states);
             // Add a fallback option
             const fallbackOption = document.createElement('option');
             fallbackOption.value = 'CA';
@@ -341,7 +516,11 @@ class FinancialApp {
                     option.value = stateCode;
                     option.textContent = stateName;
                     stateSelect.appendChild(option);
+                } else {
+                    console.warn(`State ${index} missing state code:`, state);
                 }
+            } else {
+                console.warn(`State ${index} is null/undefined`);
             }
         });
 
@@ -682,6 +861,13 @@ class FinancialApp {
             return;
         }
 
+        // Delegate to dashboard manager if available
+        if (typeof window.dashboardManager !== 'undefined' && window.dashboardManager) {
+            await window.dashboardManager.loadBudgetAndShowDashboard();
+            return;
+        }
+
+        // Fallback implementation
         try {
             // Load household data first
             this.householdData = await apiManager.loadHouseholdData(this.currentHouseholdId);
@@ -700,15 +886,24 @@ class FinancialApp {
                 // Update dashboard with budget data
                 this.updateDashboardWithBudget(latestBudget);
 
-                // Show success message about budget generation
-                uiManager.showSuccessAlert('Your personalized budget has been generated! Review and customize it using the budget builder.');
+                // Show success message about budget being loaded
+                uiManager.showSuccessAlert('Your budget has been loaded successfully!');
             } else {
-                console.warn('No budget data found, generating new budget...');
-                await this.generateNewBudget();
+                console.log('No budget data found, showing empty state');
+                // Show empty state instead of auto-generating
+                uiManager.showInfoAlert('Welcome! Create your first budget to get started with financial planning.');
             }
         } catch (error) {
-            console.error('Error loading budget data:', error);
-            uiManager.showErrorAlert('Error loading your budget. Please try refreshing the page.');
+            console.error('Error loading dashboard:', error);
+            
+            let errorMessage = 'Error loading your data. Please try refreshing the page.';
+            if (error.message.includes('household') || error.message.includes('not found')) {
+                errorMessage = 'Account data not found. Please complete onboarding or contact support.';
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = 'Connection error. Please check if the server is running and try again.';
+            }
+            
+            uiManager.showErrorAlert(errorMessage);
         }
     }
 
@@ -755,12 +950,12 @@ class FinancialApp {
 
     // Transaction and Reporting Methods - Now handled by dashboardManager
     addTransaction() {
-        if (dashboardManager) {
-        uiManager.showSection('transactions');
-        // Focus on the transaction form if it exists
-        const transactionForm = document.getElementById('transactionForm');
-        if (transactionForm) {
-            transactionForm.scrollIntoView({ behavior: 'smooth' });
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
+            uiManager.showSection('transactions');
+            // Focus on the transaction form if it exists
+            const transactionForm = document.getElementById('transactionForm');
+            if (transactionForm) {
+                transactionForm.scrollIntoView({ behavior: 'smooth' });
             }
         } else {
             console.error('Dashboard manager not initialized');
@@ -768,9 +963,9 @@ class FinancialApp {
     }
 
     viewReports() {
-        if (dashboardManager) {
-        uiManager.showSection('reports');
-        // Generate and display reports
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
+            uiManager.showSection('reports');
+            // Generate and display reports
             dashboardManager.generateReports();
         } else {
             console.error('Dashboard manager not initialized');
@@ -778,15 +973,15 @@ class FinancialApp {
     }
 
     toggleCategoryView() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.toggleCategoryView();
-                } else {
+        } else {
             console.error('Dashboard manager not initialized');
         }
     }
 
     generateReports() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.generateReports();
         } else {
             console.error('Dashboard manager not initialized');
@@ -795,7 +990,7 @@ class FinancialApp {
 
     // Data Loading Methods - Now handled by dashboardManager
     async loadDashboardData() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             await dashboardManager.loadDashboardData();
         } else {
             console.error('Dashboard manager not initialized');
@@ -803,7 +998,7 @@ class FinancialApp {
     }
 
     updateDashboardWithBudget(budgetData) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateDashboardWithBudget(budgetData);
         } else {
             console.error('Dashboard manager not initialized');
@@ -811,7 +1006,7 @@ class FinancialApp {
     }
 
     updateBudgetCategoriesDisplay(budgetItems) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateBudgetCategoriesDisplay(budgetItems);
         } else {
             console.error('Dashboard manager not initialized');
@@ -819,7 +1014,7 @@ class FinancialApp {
     }
 
     updateBudgetBreakdownCards(needs, wants, savingsDebt) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateBudgetBreakdownCards(needs, wants, savingsDebt);
         } else {
             console.error('Dashboard manager not initialized');
@@ -827,7 +1022,7 @@ class FinancialApp {
     }
 
     updateProgressBarAmounts(needs, wants, savingsDebt) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateProgressBarAmounts(needs, wants, savingsDebt);
         } else {
             console.error('Dashboard manager not initialized');
@@ -835,7 +1030,7 @@ class FinancialApp {
     }
 
     updateDebtSnowballDisplay(snowballData) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateDebtSnowballDisplay(snowballData);
         } else {
             console.error('Dashboard manager not initialized');
@@ -843,7 +1038,7 @@ class FinancialApp {
     }
 
     showEmptyDebtState() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.showEmptyDebtState();
         } else {
             console.error('Dashboard manager not initialized');
@@ -851,15 +1046,15 @@ class FinancialApp {
     }
 
     updateDebtSummary(totalMonths) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateDebtSummary(totalMonths);
-                } else {
+        } else {
             console.error('Dashboard manager not initialized');
         }
     }
 
     updateDebtTimeline(projection) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateDebtTimeline(projection);
         } else {
             console.error('Dashboard manager not initialized');
@@ -867,7 +1062,7 @@ class FinancialApp {
     }
 
     updateDebtMilestones(projection) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateDebtMilestones(projection);
         } else {
             console.error('Dashboard manager not initialized');
@@ -875,15 +1070,15 @@ class FinancialApp {
     }
 
     updateDebtNextAction(projection) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateDebtNextAction(projection);
-            } else {
+        } else {
             console.error('Dashboard manager not initialized');
         }
     }
 
     updateProjectionDisplay(projectionData) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateProjectionDisplay(projectionData);
         } else {
             console.error('Dashboard manager not initialized');
@@ -891,7 +1086,7 @@ class FinancialApp {
     }
 
     updateContextualTips() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateContextualTips();
         } else {
             console.error('Dashboard manager not initialized');
@@ -899,7 +1094,7 @@ class FinancialApp {
     }
 
     updateBudgetPerformanceTip() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateBudgetPerformanceTip();
         } else {
             console.error('Dashboard manager not initialized');
@@ -907,7 +1102,7 @@ class FinancialApp {
     }
 
     updateEmergencyFundTip() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateEmergencyFundTip();
         } else {
             console.error('Dashboard manager not initialized');
@@ -915,7 +1110,7 @@ class FinancialApp {
     }
 
     updateStateComparisonTip() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateStateComparisonTip();
         } else {
             console.error('Dashboard manager not initialized');
@@ -923,7 +1118,7 @@ class FinancialApp {
     }
 
     updateNextMilestoneTip() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateNextMilestoneTip();
         } else {
             console.error('Dashboard manager not initialized');
@@ -931,7 +1126,7 @@ class FinancialApp {
     }
 
     updateEmergencyFundTracking() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateEmergencyFundTracking();
         } else {
             console.error('Dashboard manager not initialized');
@@ -939,7 +1134,7 @@ class FinancialApp {
     }
 
     adjustEmergencyFund() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.adjustEmergencyFund();
         } else {
             console.error('Dashboard manager not initialized');
@@ -947,7 +1142,7 @@ class FinancialApp {
     }
 
     showEmptyProjectionState() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.showEmptyProjectionState();
         } else {
             console.error('Dashboard manager not initialized');
@@ -955,15 +1150,15 @@ class FinancialApp {
     }
 
     updateProjectionMetrics(projectionData) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateProjectionMetrics(projectionData);
-            } else {
+        } else {
             console.error('Dashboard manager not initialized');
         }
     }
 
     updateMonthlyProjection(projectionData) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateMonthlyProjection(projectionData);
         } else {
             console.error('Dashboard manager not initialized');
@@ -971,7 +1166,7 @@ class FinancialApp {
     }
 
     updateProjectionMilestones(months) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateProjectionMilestones(months);
         } else {
             console.error('Dashboard manager not initialized');
@@ -979,7 +1174,7 @@ class FinancialApp {
     }
 
     createProjectionTable(months) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.createProjectionTable(months);
         } else {
             console.error('Dashboard manager not initialized');
@@ -987,52 +1182,52 @@ class FinancialApp {
     }
 
     findEmergencyFundMilestone(months) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             return dashboardManager.findEmergencyFundMilestone(months);
         } else {
             console.error('Dashboard manager not initialized');
-        return 0;
+            return 0;
         }
     }
 
     findFirstDebtPayoff(months) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             return dashboardManager.findFirstDebtPayoff(months);
         } else {
             console.error('Dashboard manager not initialized');
-        return 0;
+            return 0;
         }
     }
 
     findFullEmergencyFundMilestone(months) {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             return dashboardManager.findFullEmergencyFundMilestone(months);
         } else {
             console.error('Dashboard manager not initialized');
-        return 0;
+            return 0;
         }
     }
 
     getTotalDebtBalance() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             return dashboardManager.getTotalDebtBalance();
         } else {
             console.error('Dashboard manager not initialized');
-        return 0;
+            return 0;
         }
     }
 
     // Chart Management Methods
     updateBudgetChart() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.updateBudgetChart();
-            } else {
+        } else {
             console.error('Dashboard manager not initialized');
         }
     }
 
     loadBudgetOverview() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.loadBudgetOverview();
         } else {
             console.error('Dashboard manager not initialized');
@@ -1040,7 +1235,7 @@ class FinancialApp {
     }
 
     loadMonthlyTrends() {
-        if (dashboardManager) {
+        if (typeof dashboardManager !== 'undefined' && dashboardManager) {
             dashboardManager.loadMonthlyTrends();
         } else {
             console.error('Dashboard manager not initialized');
@@ -1049,12 +1244,86 @@ class FinancialApp {
 
     // Budget Management Methods - Now handled by budgetManager
     async generateBudget() {
-        if (budgetManager) {
-            await budgetManager.generateBudget();
+        if (typeof window.budgetManager !== 'undefined' && window.budgetManager) {
+            await window.budgetManager.generateBudget();
         } else {
-            console.error('Budget manager not initialized');
-            uiManager.showErrorAlert('Budget functionality not available');
+            console.log('Budget manager not available, using fallback budget generation');
+            try {
+                const methodology = document.querySelector('input[name="budget-method"]:checked')?.value || "50/30/20";
+
+                if (!this.currentHouseholdId) {
+                    throw new Error('No household ID available');
+                }
+
+                const currentDate = new Date();
+                const budgetRequest = {
+                    householdId: parseInt(this.currentHouseholdId),
+                    methodology: methodology,
+                    month: currentDate.getMonth() + 1,
+                    year: currentDate.getFullYear()
+                };
+
+                console.log('Generating budget with request:', budgetRequest);
+                uiManager.showLoading('Generating your personalized budget...');
+
+                const budgetResponse = await apiManager.createBudget(budgetRequest);
+
+                if (budgetResponse && (budgetResponse.budget || budgetResponse.budgetItems)) {
+                    this.currentBudget = budgetResponse;
+                    console.log('Budget generated successfully:', budgetResponse);
+
+                    // Update dashboard if we're on dashboard page
+                    if (typeof window.dashboardManager !== 'undefined' && window.dashboardManager) {
+                        window.dashboardManager.updateDashboardWithBudget(budgetResponse);
+                    }
+
+                    // If on budget page, try to display categories
+                    const budgetContainer = document.getElementById('budget-categories');
+                    if (budgetContainer && budgetResponse.budgetItems) {
+                        this.displayBudgetFallback(budgetResponse.budgetItems);
+                    }
+
+                    uiManager.showSuccessAlert('Budget generated successfully!');
+                    uiManager.hideLoading();
+                } else {
+                    throw new Error('Invalid budget response from server');
+                }
+            } catch (error) {
+                console.error('Error in fallback budget generation:', error);
+                uiManager.hideLoading();
+                uiManager.showErrorAlert('Error generating budget: ' + error.message);
+            }
         }
+    }
+
+    displayBudgetFallback(budgetItems) {
+        const container = document.getElementById('budget-categories');
+        if (!container || !budgetItems || budgetItems.length === 0) return;
+
+        container.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle me-2"></i>
+                Budget generated successfully! ${budgetItems.length} categories created.
+                <br><small>Navigate to the budget page to view and adjust your budget in detail.</small>
+            </div>
+            <div class="row">
+                ${budgetItems.slice(0, 6).map(item => `
+                    <div class="col-md-4 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">${item.category?.name || 'Category'}</h6>
+                                <p class="card-text h5 text-primary">$${(item.plannedAmount || 0).toFixed(2)}</p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+                ${budgetItems.length > 6 ? `
+                    <div class="col-12">
+                        <p class="text-muted text-center">... and ${budgetItems.length - 6} more categories</p>
+                    </div>
+                ` : ''}
+            </div>
+        `;
     }
 
     // Module Management Methods
@@ -1223,26 +1492,70 @@ class FinancialApp {
             });
         });
 
-        // Budget method change
-        document.querySelectorAll('input[name="budget-method"]').forEach(radio => {
-            radio.addEventListener('change', () => {
-                this.updateBudgetMethodDescription();
+        // Budget method change (only on budget page)
+        const budgetMethodInputs = document.querySelectorAll('input[name="budget-method"]');
+        if (budgetMethodInputs.length > 0) {
+            budgetMethodInputs.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    this.updateBudgetMethodDescription();
+                });
             });
-        });
+            console.log('Budget method change listeners attached');
+        }
 
-        // Generate budget button
-        document.getElementById('generate-budget').addEventListener('click', () => {
-            this.generateBudget();
-        });
-
-        // Chart type toggle
-        document.querySelectorAll('input[name="chart-type"]').forEach(radio => {
-            radio.addEventListener('change', () => {
-                if (this.currentBudget) {
-                    this.updateBudgetChart();
+        // Generate budget button (on both budget and dashboard pages)
+        const generateBudgetBtn = document.getElementById('generate-budget');
+        if (generateBudgetBtn) {
+            generateBudgetBtn.addEventListener('click', async () => {
+                console.log('Generate budget button clicked');
+                try {
+                    if (typeof window.budgetManager !== 'undefined' && window.budgetManager) {
+                        await window.budgetManager.generateBudget();
+                    } else {
+                        console.log('Budget manager not available, calling app method');
+                        await this.generateBudget();
+                    }
+                } catch (error) {
+                    console.error('Error generating budget:', error);
+                    uiManager.showErrorAlert('Error generating budget. Please try again.');
                 }
             });
-        });
+            console.log('Generate budget button listener attached');
+        }
+
+        // Save budget button (only on budget page)
+        const saveBudgetBtn = document.getElementById('save-budget');
+        if (saveBudgetBtn) {
+            saveBudgetBtn.addEventListener('click', async () => {
+                console.log('Save budget button clicked');
+                try {
+                    if (typeof window.budgetManager !== 'undefined' && window.budgetManager) {
+                        await window.budgetManager.saveBudget();
+                    } else {
+                        uiManager.showErrorAlert('Budget manager not available');
+                    }
+                } catch (error) {
+                    console.error('Error saving budget:', error);
+                    uiManager.showErrorAlert('Error saving budget. Please try again.');
+                }
+            });
+            console.log('Save budget button listener attached');
+        }
+
+        // Chart type toggle (only on dashboard page)
+        const chartTypeInputs = document.querySelectorAll('input[name="chart-type"]');
+        if (chartTypeInputs.length > 0) {
+            chartTypeInputs.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    if (this.currentBudget) {
+                        this.updateBudgetChart();
+                    }
+                });
+            });
+            console.log('Chart type toggle listeners attached');
+        }
+
+        console.log('Event listeners setup completed');
     }
 
     updateBudgetMethodDescription() {
@@ -1265,10 +1578,42 @@ class FinancialApp {
             day: 'numeric'
         }).format(new Date(date));
     }
+
+    clearCorruptedStorage() {
+        try {
+            console.log('Clearing potentially corrupted localStorage data...');
+            sessionStorage.removeItem('userEmail');
+            localStorage.removeItem('currentHouseholdId');
+            console.log('localStorage cleared successfully');
+        } catch (error) {
+            console.error('Error clearing localStorage:', error);
+        }
+    }
+
+    clearAuthData() {
+        console.log('Clearing authentication data...');
+        // Clear all authentication-related data
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userEmail');
+        localStorage.removeItem('currentHouseholdId');
+        localStorage.removeItem('userId');
+        localStorage.removeItem('isAdmin');
+        localStorage.removeItem('hasCompletedOnboarding');
+        sessionStorage.clear();
+        
+        console.log('Authentication data cleared');
+        
+        // Show login screen via uiManager if available
+        if (window.uiManager && typeof window.uiManager.showLogin === 'function') {
+            window.uiManager.showLogin();
+        }
+    }
 }
 
-// Create global app instance
-const financialApp = new FinancialApp();
+// Create global app instance if it doesn't exist
+if (typeof window.financialApp === 'undefined') {
+    window.financialApp = new FinancialApp();
+}
 
 // Initialize budget and dashboard managers
 try {
@@ -1294,7 +1639,7 @@ try {
     // Initialize budget manager if budget.js loaded
     let budgetManager = undefined;
     if (typeof BudgetManager !== 'undefined') {
-        budgetManager = new BudgetManager(financialApp);
+        budgetManager = new BudgetManager(window.financialApp);
         console.log('Budget manager initialized');
     } else {
         console.warn('Budget manager not available - budget.js may not have loaded correctly');
@@ -1303,7 +1648,7 @@ try {
     // Initialize dashboard manager if dashboard.js loaded
     let dashboardManager = undefined;
     if (typeof DashboardManager !== 'undefined') {
-        dashboardManager = new DashboardManager(financialApp);
+        dashboardManager = new DashboardManager(window.financialApp);
         console.log('Dashboard manager initialized');
     } else {
         console.warn('Dashboard manager not available - dashboard.js may not have loaded correctly');
@@ -1313,7 +1658,6 @@ try {
     window.authManager = authManager;
     window.uiManager = uiManager;
     window.apiManager = apiManager;
-    window.financialApp = financialApp;
     
     // Only expose managers if they were initialized
     if (budgetManager !== undefined) {
@@ -1329,11 +1673,140 @@ try {
     console.error('ERROR setting up global modules:', error);
 }
 
-// Expose functions globally for onclick handlers
-window.showDashboard = () => window.location.href = 'dashboard.html';
-window.showBudgetSection = () => window.location.href = 'budget.html';
-window.showModulesSection = () => window.location.href = 'modules.html';
+// Initialize managers with better error handling
+function initializeManagers() {
+    try {
+        console.log('Initializing managers...');
+
+        // Check core managers
+        if (typeof window.uiManager === 'undefined') {
+            console.error('ERROR: uiManager not found - ui.js may not have loaded correctly');
+            return false;
+        }
+
+        if (typeof window.apiManager === 'undefined') {
+            console.error('ERROR: apiManager not found - api.js may not have loaded correctly');
+            return false;
+        }
+
+        console.log('Core managers (uiManager, apiManager) found and ready');
+
+        // Initialize budget manager if available and not already initialized
+        if (typeof window.BudgetManager !== 'undefined') {
+            if (typeof window.budgetManager === 'undefined' && window.financialApp) {
+                try {
+                    window.budgetManager = new BudgetManager(window.financialApp);
+                    console.log('Budget manager initialized successfully');
+                } catch (error) {
+                    console.error('Error initializing budget manager:', error);
+                }
+            } else if (window.budgetManager) {
+                console.log('Budget manager already initialized');
+                // Make sure it has the app reference
+                if (!window.budgetManager.financialApp && window.financialApp) {
+                    window.budgetManager.financialApp = window.financialApp;
+                }
+            } else {
+                console.log('Budget manager cannot be initialized - financialApp not ready');
+            }
+        } else {
+            console.log('Budget manager class not available (budget.js may not be loaded)');
+        }
+
+        // Initialize dashboard manager if available and not already initialized  
+        if (typeof window.DashboardManager !== 'undefined') {
+            if (typeof window.dashboardManager === 'undefined' && window.financialApp) {
+                try {
+                    window.dashboardManager = new DashboardManager(window.financialApp);
+                    console.log('Dashboard manager initialized successfully');
+                } catch (error) {
+                    console.error('Error initializing dashboard manager:', error);
+                }
+            } else if (window.dashboardManager) {
+                console.log('Dashboard manager already initialized');
+                // Make sure it has the app reference
+                if (!window.dashboardManager.financialApp && window.financialApp) {
+                    window.dashboardManager.financialApp = window.financialApp;
+                }
+            } else {
+                console.log('Dashboard manager cannot be initialized - financialApp not ready');
+            }
+        } else {
+            console.log('Dashboard manager class not available (dashboard.js may not be loaded)');
+        }
+
+        console.log('Manager initialization completed');
+        return true;
+
+    } catch (error) {
+        console.error('ERROR during manager initialization:', error);
+        return false;
+    }
+}
+
+// Retry mechanism for manager initialization
+function ensureManagersInitialized() {
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    const tryInitialize = () => {
+        attempts++;
+        console.log(`Manager initialization attempt ${attempts}/${maxAttempts}`);
+        
+        const success = initializeManagers();
+        if (!success && attempts < maxAttempts) {
+            console.log('Retrying manager initialization in 100ms...');
+            setTimeout(tryInitialize, 100);
+        } else if (!success) {
+            console.error('Failed to initialize managers after', maxAttempts, 'attempts');
+        }
+    };
+    
+    tryInitialize();
+}
+
+// Initialize managers immediately if possible, or set up deferred initialization
+if (window.financialApp) {
+    initializeManagers();
+} else {
+    console.log('Financial app not ready, will initialize managers after app initialization');
+}
+
+// Navigation functions - now using single-page application pattern
+window.showDashboard = () => {
+    if (window.uiManager) {
+        window.uiManager.showSection('dashboard');
+        if (window.financialApp && window.financialApp.showDashboard) {
+            window.financialApp.showDashboard();
+        }
+    }
+};
+
+window.showBudgetSection = () => {
+    if (window.uiManager) {
+        window.uiManager.showSection('budget');
+        if (window.financialApp && window.financialApp.showBudgetSection) {
+            window.financialApp.showBudgetSection();
+        }
+    }
+};
+
+window.showModulesSection = () => {
+    if (window.uiManager) {
+        window.uiManager.showSection('modules');
+        if (window.financialApp && window.financialApp.showModulesSection) {
+            window.financialApp.showModulesSection();
+        }
+    }
+};
 window.addTransaction = () => financialApp.addTransaction();
 window.viewReports = () => financialApp.viewReports();
 window.toggleCategoryView = () => financialApp.toggleCategoryView();
 window.adjustEmergencyFund = () => financialApp.adjustEmergencyFund();
+window.clearAuthData = () => {
+    if (window.uiManager) {
+        window.uiManager.clearAuthData();
+    } else if (window.financialApp) {
+        window.financialApp.clearAuthData();
+    }
+};
