@@ -251,14 +251,16 @@ class FinancialApp {
     }
 
     populateStateDropdown() {
-        console.log('=== POPULATING STATE DROPDOWN ===');
-        console.log('populateStateDropdown called');
         const stateSelect = document.getElementById('state');
 
+        // Only populate if we're on a page that has the state dropdown (index.html)
         if (!stateSelect) {
-            console.error('State select element not found!');
+            // Silently return - this is expected on pages other than index.html
             return;
         }
+
+        console.log('=== POPULATING STATE DROPDOWN ===');
+        console.log('populateStateDropdown called');
 
         console.log(`Current states array length: ${this.states ? this.states.length : 'undefined'}`);
         stateSelect.innerHTML = '<option value="">Select your state...</option>';
@@ -353,13 +355,51 @@ class FinancialApp {
             // Set authentication state to keep user logged in
             authManager.isAuthenticated = true;
             authManager.currentUser = { email: formData.email, userId: response.userId };
-            console.log('User authentication state maintained after onboarding');
+            
+            // Save auth data to localStorage so dashboard.html recognizes the user as authenticated
+            // If the response includes a token, use it; otherwise use a placeholder
+            if (response.token) {
+                authManager.authToken = response.token;
+                localStorage.setItem('authToken', response.token);
+            } else {
+                // For onboarding without explicit token, store a session identifier
+                authManager.authToken = 'onboarding-session-' + Date.now();
+                localStorage.setItem('authToken', authManager.authToken);
+            }
+            
+            localStorage.setItem('userEmail', formData.email);
+            if (typeof response.userId !== 'undefined') {
+                localStorage.setItem('userId', String(response.userId));
+            } else {
+                // Ensure userId is set even if undefined
+                localStorage.setItem('userId', '0');
+            }
+            localStorage.setItem('isDeveloperMode', 'false');
+            
+            // Mark that onboarding was just completed (for dashboard to show welcome message)
+            // This flag also tells dashboard.html to skip auth check
+            localStorage.setItem('onboardingCompleted', 'true');
+            localStorage.setItem('onboardingHouseholdId', String(response.householdId));
+            
+            // Verify the data was saved
+            const savedToken = localStorage.getItem('authToken');
+            const savedEmail = localStorage.getItem('userEmail');
+            console.log('Auth data saved - Token:', savedToken ? 'Present' : 'Missing', 'Email:', savedEmail);
+            
+            if (!savedToken || !savedEmail) {
+                console.error('ERROR: Failed to save auth data to localStorage');
+                throw new Error('Failed to save authentication data. Please try again.');
+            }
+            
+            // Setup auth headers for future API calls
+            authManager.setupAuthHeaders();
+            
+            console.log('User authentication state saved after onboarding - redirecting to dashboard');
 
-            // Show success message and redirect to dashboard page
-            uiManager.showSuccessAlert('Welcome! Your financial profile has been created and your initial budget has been generated.');
+            // Small delay to ensure localStorage is committed, then redirect
             setTimeout(() => {
-                window.location.href = 'dashboard.html';
-            }, 2000);
+                window.location.replace('dashboard.html');
+            }, 100);
         } catch (error) {
             console.error('ERROR submitting onboarding:', error);
             console.error('Error details:', {

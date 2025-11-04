@@ -16,13 +16,9 @@ class UIManager {
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
 
-        if (!loginSection) {
-            console.error('Login section element not found in DOM');
-            return;
-        }
-
-        if (!mainContent) {
-            console.error('Main content element not found in DOM');
+        // Only show login if we're on the index page (where these elements exist)
+        if (!loginSection || !mainContent) {
+            // Silently return - this is expected on pages other than index.html
             return;
         }
 
@@ -34,58 +30,73 @@ class UIManager {
     }
 
     setupLoginEventListeners() {
-        // Regular login form
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-password').value;
+        // Regular login form - only set up if it exists
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
 
-            try {
-                await authManager.handleLogin(email, password);
-                this.showMainApp();
-            } catch (error) {
-                this.showAlert(error.message, 'danger');
-            }
-        });
+                try {
+                    await authManager.handleLogin(email, password);
+                    this.showMainApp();
+                } catch (error) {
+                    this.showAlert(error.message, 'danger');
+                }
+            });
+        }
 
-        // Developer login form
-        document.getElementById('developer-login-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const password = document.getElementById('dev-password').value;
+        // Developer login form - only set up if it exists
+        const devLoginForm = document.getElementById('developer-login-form');
+        if (devLoginForm) {
+            devLoginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const password = document.getElementById('dev-password').value;
 
-            try {
-                await authManager.handleDeveloperLogin(password);
-                this.showMainApp();
-            } catch (error) {
-                this.showAlert(error.message, 'danger');
-            }
-        });
+                try {
+                    await authManager.handleDeveloperLogin(password);
+                    this.showMainApp();
+                } catch (error) {
+                    this.showAlert(error.message, 'danger');
+                }
+            });
+        }
     }
 
     showDeveloperLogin() {
         const devSection = document.getElementById('developer-login-section');
+        if (!devSection) {
+            // Silently return - this is expected on pages other than index.html
+            return;
+        }
         devSection.style.display = devSection.style.display === 'none' ? 'block' : 'none';
     }
 
     showMainApp() {
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
+        const publicInfoSection = document.getElementById('public-info-section');
 
-        if (!loginSection) {
-            console.error('Login section element not found in DOM');
-            return;
-        }
-
-        if (!mainContent) {
-            console.error('Main content element not found in DOM');
+        // Only show main app if we're on the index page (where these elements exist)
+        if (!loginSection || !mainContent) {
+            // Silently return - this is expected on pages other than index.html
             return;
         }
 
         loginSection.style.display = 'none';
         mainContent.classList.remove('d-none');
+        
+        // Hide public info section when logged in
+        if (publicInfoSection) {
+            publicInfoSection.style.display = 'none';
+        }
 
         // Populate user email in onboarding form if needed
         this.populateUserEmail();
+
+        // Update profile button with user email
+        this.updateProfileButton();
 
         // Set up navigation event listeners
         this.setupNavigation();
@@ -102,6 +113,37 @@ class UIManager {
 
             if (userEmailDisplay) {
                 userEmailDisplay.textContent = authManager.getCurrentUser().email;
+            }
+        }
+    }
+
+    updateProfileButton() {
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            // Only show email if user is actually logged in
+            let email = null;
+            if (authManager && authManager.isLoggedIn && authManager.isLoggedIn()) {
+                // User is logged in, get email from authManager
+                if (authManager.getCurrentUser) {
+                    const user = authManager.getCurrentUser();
+                    if (user && user.email) {
+                        email = user.email;
+                    }
+                }
+                
+                // Fallback to localStorage if authManager doesn't have it yet
+                if (!email) {
+                    email = localStorage.getItem('userEmail');
+                }
+            }
+            
+            // Update the text if we have an email and user is logged in
+            if (email && authManager && authManager.isLoggedIn && authManager.isLoggedIn()) {
+                // Truncate long emails for display (show first 22 chars + ...)
+                const displayEmail = email.length > 25 ? email.substring(0, 22) + '...' : email;
+                profileText.textContent = displayEmail;
+            } else {
+                profileText.textContent = 'Profile';
             }
         }
     }
@@ -230,7 +272,23 @@ class UIManager {
     // Global function for logout (called from HTML)
     logout() {
         authManager.logout();
-        this.showLogin();
+        
+        // Reset profile button to show "Profile" instead of user email
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            profileText.textContent = 'Profile';
+        }
+        
+        const loginSection = document.getElementById('login-section');
+        const mainContent = document.getElementById('main-content');
+        
+        // If we're on index.html, show the login section
+        if (loginSection && mainContent) {
+            this.showLogin();
+        } else {
+            // Otherwise, redirect to index.html (login page)
+            window.location.href = 'index.html';
+        }
     }
 
     clearAuthData() {
@@ -238,12 +296,45 @@ class UIManager {
         authManager.logout();
         localStorage.clear(); // Clear everything including completed modules
         sessionStorage.clear(); // Clear session data too
+        
+        // Reset profile button to show "Profile" instead of user email
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            profileText.textContent = 'Profile';
+        }
+        
         this.showLogin();
     }
 
     // Global function for showing developer login (called from HTML)
     toggleDeveloperLogin() {
         this.showDeveloperLogin();
+    }
+
+    // Check if user is authenticated and redirect if not
+    requireAuth() {
+        // Try to restore auth from localStorage first
+        if (authManager && !authManager.isAuthenticated) {
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            
+            if (token && email && window.authManager) {
+                authManager.authToken = token;
+                authManager.currentUser = { email: email, userId: localStorage.getItem('userId') ? parseInt(localStorage.getItem('userId')) : undefined };
+                authManager.isAuthenticated = true;
+                authManager.isDeveloperMode = localStorage.getItem('isDeveloperMode') === 'true';
+                authManager.setupAuthHeaders();
+            }
+        }
+        
+        // Check if user is now authenticated
+        if (!authManager || !authManager.isAuthenticated || !authManager.isLoggedIn || !authManager.isLoggedIn()) {
+            // Not authenticated, redirect to index.html
+            window.location.replace('index.html');
+            return false;
+        }
+        
+        return true;
     }
 }
 

@@ -24,6 +24,15 @@ function checkScriptLoading() {
 // Initialize the application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     try {
+        // Skip initialization on standalone pages (dashboard, budget, modules, account)
+        // These pages handle their own initialization
+        const currentPage = window.location.pathname.split('/').pop() || '';
+        const standalonePages = ['dashboard.html', 'budget.html', 'modules.html', 'account.html'];
+        if (standalonePages.includes(currentPage)) {
+            console.log(`Skipping main.js initialization on standalone page: ${currentPage}`);
+            return;
+        }
+
         console.log('=== Financial Literacy App Initialization Started ===');
         console.log('DOM Content Loaded - checking script loading...');
 
@@ -43,6 +52,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         financialApp.init();
+        
+        // Update profile button with user email after initialization
+        if (window.uiManager && typeof window.uiManager.updateProfileButton === 'function') {
+            uiManager.updateProfileButton();
+        }
+        
         console.log('=== Financial Literacy App initialized successfully ===');
     } catch (error) {
         console.error('=== CRITICAL ERROR during app initialization ===');

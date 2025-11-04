@@ -14,6 +14,108 @@
 body {
     background-color: var(--light-bg);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: var(--dark-text);
+}
+
+/* Fix text-muted visibility - make it much darker and more visible by default */
+.text-muted {
+    color: #495057 !important; /* Darker gray for better visibility on light backgrounds */
+    opacity: 1 !important; /* Ensure full opacity */
+}
+
+/* Make text-muted more visible in card bodies - darker for light backgrounds */
+.card-body .text-muted,
+.card-body p.text-muted,
+.card-body small.text-muted,
+.card-body span.text-muted,
+.card-body .text-muted,
+.card:not(.bg-primary):not(.bg-success):not(.bg-info):not(.bg-danger):not(.bg-warning):not(.bg-dark) .text-muted {
+    color: #495057 !important; /* Darker gray for visibility on white/light backgrounds */
+}
+
+/* Fix text-muted in debt timeline and other specific sections */
+#debt-timeline .text-muted,
+#debt-timeline p.text-muted,
+.debt-timeline .text-muted,
+.debt-visualization .text-muted,
+.card-body #debt-timeline .text-muted,
+.card-body #debt-timeline p.text-muted {
+    color: #495057 !important; /* Dark gray for visibility */
+    font-weight: 400 !important;
+}
+
+/* Ensure text-muted is visible on colored card backgrounds */
+.card.bg-dark .text-muted,
+.card.bg-primary .text-muted,
+.card.bg-success .text-muted,
+.card.bg-info .text-muted,
+.card.bg-danger .text-muted,
+.card-body.bg-dark .text-muted {
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Warning cards need dark text */
+.card.bg-warning .text-muted {
+    color: #212529 !important;
+}
+
+/* Small text should also be more visible */
+small.text-muted,
+.text-muted small {
+    color: #495057 !important;
+}
+
+/* Lead text with muted should be visible */
+.lead.text-muted,
+p.lead.text-muted {
+    color: #495057 !important;
+}
+
+/* All paragraph text with muted should be visible */
+p.text-muted,
+.text-muted p {
+    color: #495057 !important;
+}
+
+/* Ensure span elements with text-muted are visible */
+span.text-muted,
+.text-muted span {
+    color: #495057 !important;
+}
+
+/* Fix text-muted in card headers on colored backgrounds */
+.card-header.bg-primary .text-muted,
+.card-header.bg-success .text-muted,
+.card-header.bg-info .text-muted,
+.card-header.bg-danger .text-muted {
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.card-header.bg-warning .text-muted {
+    color: #212529 !important;
+}
+
+/* Final comprehensive rule - ensure ALL text-muted is visible by default */
+/* This catches any edge cases and ensures visibility on light backgrounds */
+.card .text-muted,
+.card-body .text-muted,
+.card-body .text-muted p,
+.card-body .text-muted span,
+.card-body .text-muted small {
+    color: #495057 !important;
+}
+
+/* But override for dark backgrounds */
+.card.bg-primary .text-muted,
+.card.bg-success .text-muted,
+.card.bg-info .text-muted,
+.card.bg-danger .text-muted,
+.card.bg-dark .text-muted {
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.card.bg-warning .text-muted {
+    color: #212529 !important;
 }
 
 .content-section {
@@ -48,6 +150,114 @@ body {
 
 .card-header {
     border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+/* Ensure proper text contrast on card headers with background colors */
+.card-header.bg-primary,
+.card-header.bg-success,
+.card-header.bg-info,
+.card-header.bg-danger {
+    color: #ffffff !important;
+}
+
+.card-header.bg-primary h1,
+.card-header.bg-primary h2,
+.card-header.bg-primary h3,
+.card-header.bg-primary h4,
+.card-header.bg-primary h5,
+.card-header.bg-primary h6,
+.card-header.bg-primary .card-title,
+.card-header.bg-success h1,
+.card-header.bg-success h2,
+.card-header.bg-success h3,
+.card-header.bg-success h4,
+.card-header.bg-success h5,
+.card-header.bg-success h6,
+.card-header.bg-success .card-title,
+.card-header.bg-info h1,
+.card-header.bg-info h2,
+.card-header.bg-info h3,
+.card-header.bg-info h4,
+.card-header.bg-info h5,
+.card-header.bg-info h6,
+.card-header.bg-info .card-title,
+.card-header.bg-danger h1,
+.card-header.bg-danger h2,
+.card-header.bg-danger h3,
+.card-header.bg-danger h4,
+.card-header.bg-danger h5,
+.card-header.bg-danger h6,
+.card-header.bg-danger .card-title {
+    color: #ffffff !important;
+}
+
+/* Warning background needs dark text */
+.card-header.bg-warning {
+    color: #212529 !important;
+}
+
+.card-header.bg-warning h1,
+.card-header.bg-warning h2,
+.card-header.bg-warning h3,
+.card-header.bg-warning h4,
+.card-header.bg-warning h5,
+.card-header.bg-warning h6,
+.card-header.bg-warning .card-title {
+    color: #212529 !important;
+}
+
+/* Ensure cards with background colors have proper text contrast */
+.card.bg-primary,
+.card.bg-success,
+.card.bg-info,
+.card.bg-danger {
+    color: #ffffff !important;
+}
+
+.card.bg-primary h1,
+.card.bg-primary h2,
+.card.bg-primary h3,
+.card.bg-primary h4,
+.card.bg-primary h5,
+.card.bg-primary h6,
+.card.bg-primary .card-title,
+.card.bg-success h1,
+.card.bg-success h2,
+.card.bg-success h3,
+.card.bg-success h4,
+.card.bg-success h5,
+.card.bg-success h6,
+.card.bg-success .card-title,
+.card.bg-info h1,
+.card.bg-info h2,
+.card.bg-info h3,
+.card.bg-info h4,
+.card.bg-info h5,
+.card.bg-info h6,
+.card.bg-info .card-title,
+.card.bg-danger h1,
+.card.bg-danger h2,
+.card.bg-danger h3,
+.card.bg-danger h4,
+.card.bg-danger h5,
+.card.bg-danger h6,
+.card.bg-danger .card-title {
+    color: #ffffff !important;
+}
+
+/* Warning cards need dark text */
+.card.bg-warning {
+    color: #212529 !important;
+}
+
+.card.bg-warning h1,
+.card.bg-warning h2,
+.card.bg-warning h3,
+.card.bg-warning h4,
+.card.bg-warning h5,
+.card.bg-warning h6,
+.card.bg-warning .card-title {
+    color: #212529 !important;
 }
 
 /* Form styles */
@@ -157,21 +367,35 @@ body {
 /* Dashboard cards */
 .summary-card {
     background: linear-gradient(135deg, var(--primary-color), #0056b3);
-    color: white;
+    color: #ffffff !important;
     border-radius: var(--border-radius);
     padding: 1.5rem;
     margin-bottom: 1rem;
 }
 
-.summary-card h3 {
+.summary-card h3,
+.summary-card h1,
+.summary-card h2,
+.summary-card h4,
+.summary-card h5,
+.summary-card h6 {
     margin: 0;
-    font-size: 2rem;
+    color: #ffffff !important;
     font-weight: bold;
 }
 
+.summary-card h3 {
+    font-size: 2rem;
+}
+
 .summary-card .card-title {
-    opacity: 0.9;
+    color: rgba(255, 255, 255, 0.9) !important;
     margin-bottom: 0.5rem;
+}
+
+.summary-card small,
+.summary-card .text-muted {
+    color: rgba(255, 255, 255, 0.8) !important;
 }
 
 /* Income/Debt entry styling */
@@ -260,17 +484,62 @@ body {
 
 .alert-success {
     background-color: #d1edff;
-    color: #0c63e4;
+    color: #0c63e4 !important;
+}
+
+.alert-success strong,
+.alert-success h1,
+.alert-success h2,
+.alert-success h3,
+.alert-success h4,
+.alert-success h5,
+.alert-success h6 {
+    color: #0c63e4 !important;
 }
 
 .alert-warning {
     background-color: #fff3cd;
-    color: #856404;
+    color: #856404 !important;
+}
+
+.alert-warning strong,
+.alert-warning h1,
+.alert-warning h2,
+.alert-warning h3,
+.alert-warning h4,
+.alert-warning h5,
+.alert-warning h6 {
+    color: #856404 !important;
 }
 
 .alert-danger {
     background-color: #f8d7da;
-    color: #721c24;
+    color: #721c24 !important;
+}
+
+.alert-danger strong,
+.alert-danger h1,
+.alert-danger h2,
+.alert-danger h3,
+.alert-danger h4,
+.alert-danger h5,
+.alert-danger h6 {
+    color: #721c24 !important;
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    color: #0c5460 !important;
+}
+
+.alert-info strong,
+.alert-info h1,
+.alert-info h2,
+.alert-info h3,
+.alert-info h4,
+.alert-info h5,
+.alert-info h6 {
+    color: #0c5460 !important;
 }
 
 /* Utility classes */
@@ -284,18 +553,62 @@ body {
 
 .bg-gradient-primary {
     background: linear-gradient(135deg, var(--primary-color), #0056b3);
+    color: #ffffff !important;
+}
+
+.bg-gradient-primary h1,
+.bg-gradient-primary h2,
+.bg-gradient-primary h3,
+.bg-gradient-primary h4,
+.bg-gradient-primary h5,
+.bg-gradient-primary h6,
+.bg-gradient-primary .card-title {
+    color: #ffffff !important;
 }
 
 .bg-gradient-success {
     background: linear-gradient(135deg, var(--success-color), #146c43);
+    color: #ffffff !important;
+}
+
+.bg-gradient-success h1,
+.bg-gradient-success h2,
+.bg-gradient-success h3,
+.bg-gradient-success h4,
+.bg-gradient-success h5,
+.bg-gradient-success h6,
+.bg-gradient-success .card-title {
+    color: #ffffff !important;
 }
 
 .bg-gradient-warning {
     background: linear-gradient(135deg, var(--warning-color), #d39e00);
+    color: #212529 !important;
+}
+
+.bg-gradient-warning h1,
+.bg-gradient-warning h2,
+.bg-gradient-warning h3,
+.bg-gradient-warning h4,
+.bg-gradient-warning h5,
+.bg-gradient-warning h6,
+.bg-gradient-warning .card-title {
+    color: #212529 !important;
 }
 
 .bg-gradient-info {
     background: linear-gradient(135deg, var(--info-color), #0aa2c0);
+    color: #212529 !important;
+}
+
+.bg-gradient-info h1,
+.bg-gradient-info h2,
+.bg-gradient-info h3,
+.bg-gradient-info h4,
+.bg-gradient-info h5,
+.bg-gradient-info h6,
+.bg-gradient-info .card-title {
+    color: #212529 !important;
 }
 
 /* Module and Interactive Elements */
@@ -466,6 +779,21 @@ body {
     padding: 1rem;
     background: linear-gradient(135deg, #e7f3ff, #d1ecf1);
     border-radius: var(--border-radius);
+    color: #212529 !important;
+}
+
+.projection-item h1,
+.projection-item h2,
+.projection-item h3,
+.projection-item h4,
+.projection-item h5,
+.projection-item h6 {
+    color: #212529 !important;
+}
+
+.projection-item small,
+.projection-item .text-muted {
+    color: #495057 !important;
 }
 
 .milestone-item {
@@ -611,6 +939,7 @@ body {
 
 .badge.bg-success {
     background-color: #198754 !important;
+    color: #ffffff !important;
 }
 
 .badge.bg-warning {
@@ -620,6 +949,22 @@ body {
 
 .badge.bg-danger {
     background-color: #dc3545 !important;
+    color: #ffffff !important;
+}
+
+.badge.bg-primary {
+    background-color: #0d6efd !important;
+    color: #ffffff !important;
+}
+
+.badge.bg-info {
+    background-color: #0dcaf0 !important;
+    color: #212529 !important;
+}
+
+.badge.bg-light {
+    background-color: #f8f9fa !important;
+    color: #212529 !important;
 }
 
 /* Footer styling */
@@ -690,6 +1035,25 @@ footer {
     }
 }
 
+/* Ensure text elements within colored backgrounds have proper contrast */
+.card.bg-primary small,
+.card.bg-success small,
+.card.bg-info small,
+.card.bg-danger small {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* text-muted rules are handled earlier in the file */
+
+.card-header.bg-primary small,
+.card-header.bg-success small,
+.card-header.bg-info small,
+.card-header.bg-danger small {
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* text-muted rules for headers are handled earlier in the file */
+
 /* Dark mode preparation (for future enhancement) */
 @media (prefers-color-scheme: dark) {
     :root {
@@ -705,6 +1069,17 @@ footer {
     .card {
         background-color: #2d2d2d;
         color: var(--dark-text);
+    }
+    
+    .card-header.bg-primary,
+    .card-header.bg-success,
+    .card-header.bg-info,
+    .card-header.bg-danger {
+        color: #ffffff !important;
+    }
+    
+    .card-header.bg-warning {
+        color: #212529 !important;
     }
 }
 
