@@ -62,6 +62,15 @@ function checkScriptLoading() {
 // Initialize the application when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        // Skip initialization on standalone pages (dashboard, budget, modules, account)
+        // These pages handle their own initialization
+        const currentPage = window.location.pathname.split('/').pop() || '';
+        const standalonePages = ['dashboard.html', 'budget.html', 'modules.html', 'account.html'];
+        if (standalonePages.includes(currentPage)) {
+            console.log(`Skipping main.js initialization on standalone page: ${currentPage}`);
+            return;
+        }
+
         console.log('=== Financial Literacy App Initialization Started ===');
         console.log('DOM Content Loaded - checking script loading...');
 
@@ -88,8 +97,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             throw new Error('financialApp.init is not a function. The app may not be properly initialized.');
         }
 
-        // Initialize the app
+        // CRITICAL: Check if onboarding was just completed BEFORE calling init
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        if (onboardingCompleted || window.onboardingJustCompleted) {
+            console.log('[MAIN.JS] Onboarding just completed - skipping app.init() and redirecting to dashboard');
+            window.location.replace('dashboard.html');
+            return;
+        }
+        
         await financialApp.init();
+        
+        // Update profile button with user email after initialization
+        if (window.uiManager && typeof window.uiManager.updateProfileButton === 'function') {
+            uiManager.updateProfileButton();
+        }
+        
+        // Update navigation visibility based on auth status
+        if (window.uiManager && typeof window.uiManager.updateNavigationVisibility === 'function') {
+            uiManager.updateNavigationVisibility();
+        }
+        
         console.log('=== Financial Literacy App initialized successfully ===');
         
     } catch (error) {

@@ -474,32 +474,61 @@
     window.addEditDebtEntry = addEditDebtEntry;
 
     document.addEventListener('DOMContentLoaded', async () => {
-        const email = getStoredUserEmail();
-        if (!email) {
-            showAlert('account-warning-alert', 'Please enter your email on the home page first.');
+        console.log('[ACCOUNT.JS] DOMContentLoaded handler starting');
+        
+        // CRITICAL: Check if onboarding was just completed - if so, don't redirect
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        console.log('[ACCOUNT.JS] onboardingCompleted:', onboardingCompleted, 'onboardingJustCompleted:', window.onboardingJustCompleted);
+        
+        // Try to restore auth
+        let ok = restoreAuthFromStorage();
+        console.log('[ACCOUNT.JS] Initial auth restoration result:', ok);
+        
+        // If auth restoration failed but onboarding was just completed, try again
+        if (!ok && (onboardingCompleted || window.onboardingJustCompleted)) {
+            console.log('[ACCOUNT.JS] Onboarding completed - attempting to restore auth');
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            const userId = localStorage.getItem('userId');
+            
+            if (token && email && window.authManager) {
+                authManager.authToken = token;
+                authManager.currentUser = { email: email, userId: userId ? parseInt(userId) : undefined };
+                authManager.isAuthenticated = true;
+                authManager.isDeveloperMode = false;
+                authManager.setupAuthHeaders();
+                ok = true;
+                console.log('[ACCOUNT.JS] Auth restored successfully after onboarding');
+            } else {
+                console.error('[ACCOUNT.JS] Failed to restore auth - token:', !!token, 'email:', !!email, 'authManager:', !!window.authManager);
+            }
+        }
+        
+        // Check if user is authenticated now
+        const isAuthenticated = window.authManager && (authManager.isAuthenticated || (authManager.isLoggedIn && authManager.isLoggedIn()));
+        console.log('[ACCOUNT.JS] Final auth check - isAuthenticated:', isAuthenticated, 'ok:', ok);
+        
+        // Only show "not logged in" message if auth failed AND onboarding wasn't just completed
+        if (!ok && !isAuthenticated && !onboardingCompleted && !window.onboardingJustCompleted) {
+            console.log('[ACCOUNT.JS] User not authenticated and onboarding not completed - showing alert');
+            showAlert('account-info-alert', 'You are not logged in. Please sign in on the home page.');
+            // Don't redirect - let the user see the message
             return;
         }
 
+        // If we get here, user should be authenticated (either from onboarding or normal login)
         try {
-            // Check if user has completed onboarding (has household ID in localStorage or household data)
-            const storedHouseholdId = localStorage.getItem('currentHouseholdId');
-            const household = await loadHousehold(email);
-
-            if (storedHouseholdId || (household && household.id)) {
-                // User has completed onboarding, show account overview
-                document.getElementById('account-overview-section').classList.remove('d-none');
-                renderUserCard();
+            renderUserCard();
+            const user = authManager.getCurrentUser();
+            if (user) {
+                console.log('[ACCOUNT.JS] Loading household data for user:', user.email);
+                const household = await loadHousehold(user.email);
                 renderHousehold(household);
             } else {
-                // User needs to complete onboarding
-                document.getElementById('onboarding-section').style.display = 'block';
-                await setupOnboardingForm();
+                console.warn('[ACCOUNT.JS] No user found after auth restoration');
             }
-
-            // Setup edit form handler (for when user completes onboarding and wants to edit)
-            document.getElementById('edit-profile-form').addEventListener('submit', handleEditProfileSubmit);
-
         } catch (error) {
+            console.error('[ACCOUNT.JS] Error loading account data:', error);
             showAlert('account-error-alert', error.message || 'Unexpected error.');
         }
     });

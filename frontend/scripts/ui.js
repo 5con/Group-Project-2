@@ -13,17 +13,27 @@ class UIManager {
     }
 
     showLogin() {
-        const loginSection = document.getElementById('login-section');
-        const mainContent = document.getElementById('main-content');
-        const mainNavbar = document.getElementById('main-navbar');
-
-        if (!loginSection) {
-            console.error('Login section element not found in DOM');
+        // CRITICAL: Don't show login if onboarding redirect is in progress
+        if (window.onboardingRedirectInProgress) {
+            console.log('Onboarding redirect in progress - skipping showLogin()');
             return;
         }
+        
+        // CRITICAL: Don't show login if onboarding was just completed
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        if (onboardingCompleted) {
+            console.log('Onboarding just completed - skipping showLogin()');
+            return;
+        }
+        
+        const loginSection = document.getElementById('login-section');
+        const mainContent = document.getElementById('main-content');
+        const publicInfoSection = document.getElementById('public-info-section');
+        const mainNavbar = document.getElementById('main-navbar');
 
-        if (!mainContent) {
-            console.error('Main content element not found in DOM');
+        // Only show login if we're on the index page (where these elements exist)
+        if (!loginSection || !mainContent) {
+            // Silently return - this is expected on pages other than index.html
             return;
         }
 
@@ -33,75 +43,93 @@ class UIManager {
         if (mainNavbar) {
             mainNavbar.classList.add('d-none');
         }
+        
+        // Show public info section when not logged in
+        if (publicInfoSection) {
+            publicInfoSection.style.display = 'block';
+        }
+
+        // Reset profile button to show "Profile" instead of user email
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            profileText.textContent = 'Profile';
+        }
+
+        // Hide navigation items when not logged in
+        this.updateNavigationVisibility();
 
         // Set up login event listeners
         this.setupLoginEventListeners();
     }
 
     setupLoginEventListeners() {
-        // Handle login form submission with proper authentication
-        const form = document.getElementById('login-form');
-        if (!form) return;
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-password').value;
+        // Regular login form - only set up if it exists
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
 
-            if (!email) {
-                this.showAlert('Please enter an email address', 'danger');
-                return;
-            }
+                if (!email) {
+                    this.showAlert('Please enter an email address', 'danger');
+                    return;
+                }
 
-            if (!password) {
-                this.showAlert('Please enter a password', 'danger');
-                return;
-            }
+                if (!password) {
+                    this.showAlert('Please enter a password', 'danger');
+                    return;
+                }
 
-            try {
-                console.log('Attempting login with email:', email);
-
-                // Use the API manager's login method
-                const response = await window.apiManager.login(email, password);
-
-                if (response && response.token) {
-                    console.log('Login successful, showing main application...');
-
-                    // Show success message
-                    this.showSuccessAlert('Login successful! Loading your dashboard...');
-
-                    // Show main application content instead of redirecting
+                try {
+                    await authManager.handleLogin(email, password);
                     this.showMainApp();
-                } else {
-                    throw new Error('Invalid response from server');
+                } catch (error) {
+                    let errorMessage = 'Login failed. Please check your credentials and try again.';
+                    if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                        errorMessage = 'Invalid email or password. Please try again.';
+                    } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                        errorMessage = 'Network error. Please check your connection and try again.';
+                    }
+                    this.showAlert(errorMessage, 'danger');
                 }
-            } catch (error) {
-                console.error('Login error:', error);
+            });
+        }
 
-                let errorMessage = 'Login failed. Please check your credentials and try again.';
-                if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-                    errorMessage = 'Invalid email or password. Please try again.';
-                } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                    errorMessage = 'Network error. Please check your connection and try again.';
+        // Developer login form - only set up if it exists
+        const devLoginForm = document.getElementById('developer-login-form');
+        if (devLoginForm) {
+            devLoginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const password = document.getElementById('dev-password').value;
+
+                try {
+                    await authManager.handleDeveloperLogin(password);
+                    this.showMainApp();
+                } catch (error) {
+                    this.showAlert(error.message, 'danger');
                 }
-
-                this.showAlert(errorMessage, 'danger');
-            }
-        });
+            });
+        }
     }
 
+    showDeveloperLogin() {
+        const devSection = document.getElementById('developer-login-section');
+        if (!devSection) {
+            return;
+        }
+        devSection.style.display = devSection.style.display === 'none' ? 'block' : 'none';
+    }
 
     showMainApp() {
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
+        const publicInfoSection = document.getElementById('public-info-section');
         const mainNavbar = document.getElementById('main-navbar');
 
-        if (!loginSection) {
-            console.error('Login section element not found in DOM');
-            return;
-        }
-
-        if (!mainContent) {
-            console.error('Main content element not found in DOM');
+        // Only show main app if we're on the index page (where these elements exist)
+        if (!loginSection || !mainContent) {
+            // Silently return - this is expected on pages other than index.html
             return;
         }
 
@@ -111,18 +139,29 @@ class UIManager {
         if (mainNavbar) {
             mainNavbar.classList.remove('d-none');
         }
+        
+        // Hide public info section when logged in
+        if (publicInfoSection) {
+            publicInfoSection.style.display = 'none';
+        }
 
         // Populate user email in onboarding form if needed
         this.populateUserEmail();
 
+        // Update profile button with user email
+        this.updateProfileButton();
+
+        // Show navigation items when logged in
+        this.updateNavigationVisibility();
+
         // Set up navigation event listeners
         this.setupNavigation();
-
-        // Initialize dashboard after showing main app
-        if (window.financialApp) {
-            // Show dashboard section and load data
-            this.showSection('dashboard');
-            window.financialApp.loadBudgetAndShowDashboard();
+        
+        // CRITICAL: Ensure event listeners for onboarding form are set up
+        // This ensures add income/debt buttons work when onboarding section is shown
+        if (window.financialApp && typeof window.financialApp.setupEventListeners === 'function') {
+            console.log('[UIMANAGER] Setting up event listeners for onboarding form');
+            window.financialApp.setupEventListeners();
         }
     }
 
@@ -141,6 +180,102 @@ class UIManager {
                 // Don't set demo email - leave fields empty for new users
             }
         }
+    }
+
+    updateProfileButton() {
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            // Only show email if user is actually logged in
+            let email = null;
+            if (authManager && authManager.isLoggedIn && authManager.isLoggedIn()) {
+                // User is logged in, get email from authManager
+                if (authManager.getCurrentUser) {
+                    const user = authManager.getCurrentUser();
+                    if (user && user.email) {
+                        email = user.email;
+                    }
+                }
+                
+                // Fallback to localStorage if authManager doesn't have it yet
+                if (!email) {
+                    email = localStorage.getItem('userEmail');
+                }
+            }
+            
+            // Update the text if we have an email and user is logged in
+            if (email && authManager && authManager.isLoggedIn && authManager.isLoggedIn()) {
+                // Truncate long emails for display (show first 22 chars + ...)
+                const displayEmail = email.length > 25 ? email.substring(0, 22) + '...' : email;
+                profileText.textContent = displayEmail;
+            } else {
+                profileText.textContent = 'Profile';
+            }
+        }
+    }
+
+    updateNavigationVisibility() {
+        // Check if user is logged in - check multiple sources
+        let isLoggedIn = false;
+        
+        // Check authManager first
+        if (authManager) {
+            if (authManager.isLoggedIn && typeof authManager.isLoggedIn === 'function') {
+                isLoggedIn = authManager.isLoggedIn();
+            } else if (authManager.isAuthenticated) {
+                isLoggedIn = true;
+            }
+        }
+        
+        // Also check localStorage as backup
+        if (!isLoggedIn) {
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            if (token && email) {
+                isLoggedIn = true;
+                // Try to restore auth state if not already set
+                if (authManager && !authManager.isAuthenticated) {
+                    authManager.authToken = token;
+                    authManager.currentUser = { email: email, userId: localStorage.getItem('userId') ? parseInt(localStorage.getItem('userId')) : undefined };
+                    authManager.isAuthenticated = true;
+                    authManager.setupAuthHeaders();
+                }
+            }
+        }
+        
+        // Check for onboarding completion - if completed, user should be logged in
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        if (onboardingCompleted && !isLoggedIn) {
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            if (token && email) {
+                isLoggedIn = true;
+            }
+        }
+        
+        console.log('[updateNavigationVisibility] isLoggedIn:', isLoggedIn, 'onboardingCompleted:', onboardingCompleted);
+        
+        // Navigation items to hide/show based on auth status
+        const protectedNavItems = [
+            'nav-item-dashboard',
+            'nav-item-budget',
+            'nav-item-modules',
+            'nav-item-account',
+            'nav-item-profile',
+            'nav-item-logout'
+        ];
+        
+        protectedNavItems.forEach(itemId => {
+            const item = document.getElementById(itemId);
+            if (item) {
+                if (isLoggedIn || onboardingCompleted) {
+                    item.style.display = '';
+                    console.log('[updateNavigationVisibility] Showing nav item:', itemId);
+                } else {
+                    item.style.display = 'none';
+                    console.log('[updateNavigationVisibility] Hiding nav item:', itemId);
+                }
+            }
+        });
     }
 
     showSection(sectionName) {
@@ -275,12 +410,42 @@ class UIManager {
         }
     }
 
+    // Global function for logout (called from HTML)
+    logout() {
+        authManager.logout();
+        
+        // Reset profile button to show "Profile" instead of user email
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            profileText.textContent = 'Profile';
+        }
+        
+        // Hide navigation items when logged out
+        this.updateNavigationVisibility();
+        
+        const loginSection = document.getElementById('login-section');
+        const mainContent = document.getElementById('main-content');
+        
+        // If we're on index.html, show the login section
+        if (loginSection && mainContent) {
+            this.showLogin();
+        } else {
+            // Otherwise, redirect to index.html (login page)
+            window.location.href = 'index.html';
+        }
+    }
 
     clearAuthData() {
         // Clear all data and reset to clean state
         localStorage.clear(); // Clear everything including completed modules
         sessionStorage.clear(); // Clear session data too
-
+        
+        // Reset profile button to show "Profile" instead of user email
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            profileText.textContent = 'Profile';
+        }
+        
         // Hide navigation and show login
         const mainNavbar = document.getElementById('main-navbar');
         if (mainNavbar) {
@@ -319,6 +484,45 @@ class UIManager {
         if (exportTransactionsBtn) {
             exportTransactionsBtn.addEventListener('click', () => this.exportTransactions());
         }
+    }
+
+    // Check if user is authenticated and redirect if not
+    requireAuth() {
+        // CRITICAL: Check for onboarding completion FIRST - if onboarding was just completed,
+        // we should NOT redirect, even if auth restoration hasn't happened yet
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        
+        // Also check the immediate flag set by dashboard.html
+        if (window.onboardingJustCompleted) {
+            console.log('[requireAuth] Onboarding just completed - preventing redirect');
+            return true;
+        }
+        
+        // Try to restore auth from localStorage first
+        if (authManager && !authManager.isAuthenticated) {
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            
+            if (token && email && window.authManager) {
+                authManager.authToken = token;
+                authManager.currentUser = { email: email, userId: localStorage.getItem('userId') ? parseInt(localStorage.getItem('userId')) : undefined };
+                authManager.isAuthenticated = true;
+                authManager.isDeveloperMode = localStorage.getItem('isDeveloperMode') === 'true';
+                authManager.setupAuthHeaders();
+            }
+        }
+        
+        // Check if user is now authenticated
+        // If onboarding was just completed, don't redirect - let the dashboard handle it
+        const isAuthenticated = authManager && authManager.isAuthenticated && (!authManager.isLoggedIn || authManager.isLoggedIn());
+        
+        if (!isAuthenticated && !onboardingCompleted && !window.onboardingJustCompleted) {
+            // Not authenticated and onboarding wasn't just completed, redirect to index.html
+            window.location.replace('index.html');
+            return false;
+        }
+        
+        return true;
     }
 
     /**
@@ -399,7 +603,6 @@ class UIManager {
             this.showErrorAlert('Failed to export transactions');
         }
     }
-
 }
 
 // Create global UI instance if it doesn't exist

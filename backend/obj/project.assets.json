@@ -1042,19 +1042,19 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Connor\\.nuget\\packages\\": {}
+    "C:\\Users\\tait4\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "E:\\School\\MIS-321\\Group-Project-2\\backend\\backend.csproj",
+      "projectUniqueName": "C:\\Users\\tait4\\OneDrive\\Desktop\\MIS321Repos\\Group-Project-2\\backend\\backend.csproj",
       "projectName": "backend",
-      "projectPath": "E:\\School\\MIS-321\\Group-Project-2\\backend\\backend.csproj",
-      "packagesPath": "C:\\Users\\Connor\\.nuget\\packages\\",
-      "outputPath": "E:\\School\\MIS-321\\Group-Project-2\\backend\\obj\\",
+      "projectPath": "C:\\Users\\tait4\\OneDrive\\Desktop\\MIS321Repos\\Group-Project-2\\backend\\backend.csproj",
+      "packagesPath": "C:\\Users\\tait4\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\tait4\\OneDrive\\Desktop\\MIS321Repos\\Group-Project-2\\backend\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Connor\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\tait4\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net9.0"
@@ -1132,7 +1132,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.102/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.111/PortableRuntimeIdentifierGraph.json"
       }
     }
   }
