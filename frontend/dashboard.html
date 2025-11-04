@@ -40,26 +40,26 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
+                    <li class="nav-item" id="nav-item-dashboard">
                         <a class="nav-link active" href="dashboard.html">Dashboard</a>
                     </li>
-                    <li class="nav-item">
+                    <li class="nav-item" id="nav-item-budget">
                         <a class="nav-link" href="budget.html">Budget</a>
                     </li>
-                    <li class="nav-item">
+                    <li class="nav-item" id="nav-item-modules">
                         <a class="nav-link" href="modules.html">Learning Modules</a>
                     </li>
-                    <li class="nav-item">
+                    <li class="nav-item" id="nav-item-account">
                         <a class="nav-link" href="account.html">Account</a>
                     </li>
                 </ul>
                 <ul class="navbar-nav">
-                    <li class="nav-item me-2">
+                    <li class="nav-item me-2" id="nav-item-profile">
                         <a class="btn btn-outline-light btn-sm" href="account.html" title="View Profile">
                             <i class="bi bi-person-circle me-1"></i><span id="profile-text">Profile</span>
                         </a>
                     </li>
-                    <li class="nav-item">
+                    <li class="nav-item" id="nav-item-logout">
                         <button class="btn btn-outline-light btn-sm" onclick="logout()">
                             <i class="bi bi-box-arrow-right me-1"></i>Logout
                         </button>
@@ -592,6 +592,26 @@
         crossorigin="anonymous"
     ></script>
 
+    <!-- CRITICAL: Restore auth state BEFORE any scripts run that might redirect -->
+    <script>
+        // This runs immediately when the page loads, before any other scripts
+        // CRITICAL: Check for onboarding completion and prevent redirects
+        (function() {
+            // Check if onboarding was just completed
+            const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            
+            console.log('[IMMEDIATE CHECK] onboardingCompleted:', onboardingCompleted, 'token:', token ? 'Present' : 'Missing', 'email:', email || 'Missing');
+            
+            // If onboarding was completed, set a flag to prevent any redirects
+            if (onboardingCompleted && token && email) {
+                window.onboardingJustCompleted = true;
+                console.log('[IMMEDIATE CHECK] Onboarding just completed - preventing redirects');
+            }
+        })();
+    </script>
+    
     <!-- Custom JavaScript -->
     <script src="./scripts/auth.js"></script>
     <script src="./scripts/ui.js"></script>
@@ -600,51 +620,73 @@
     
     <!-- Restore auth state IMMEDIATELY after scripts load (before DOMContentLoaded) -->
     <script>
+        // CRITICAL: This script runs immediately after scripts load to restore auth BEFORE any checks
         // Function to restore auth state from localStorage
         function restoreAuthFromStorage() {
             try {
-                // Check if onboarding was just completed first
+                // CRITICAL: Check if onboarding was just completed FIRST
                 const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
                 const token = localStorage.getItem('authToken');
                 const email = localStorage.getItem('userEmail');
                 const userId = localStorage.getItem('userId');
                 const isDev = localStorage.getItem('isDeveloperMode') === 'true';
 
+                console.log('[EARLY RESTORE] onboardingCompleted:', onboardingCompleted, 'token:', token ? 'Present' : 'Missing', 'email:', email || 'Missing');
+
                 // If onboarding was completed, we MUST have token and email
                 if (onboardingCompleted && (!token || !email)) {
-                    console.warn('Onboarding completed but auth data missing - this should not happen');
+                    console.error('[EARLY RESTORE] CRITICAL: Onboarding completed but auth data missing!');
                     return false;
                 }
 
                 // If no token or email, auth can't be restored
-                if (!token || !email) return false;
+                if (!token || !email) {
+                    console.log('[EARLY RESTORE] No auth data found in localStorage');
+                    return false;
+                }
+
+                // CRITICAL: Wait for authManager to be available (scripts might still be loading)
+                if (!window.authManager) {
+                    console.error('[EARLY RESTORE] authManager not yet available - will retry in DOMContentLoaded');
+                    return false;
+                }
 
                 // Rehydrate auth state for this standalone page
-                if (window.authManager) {
-                    authManager.authToken = token;
-                    authManager.currentUser = { email: email, userId: userId ? parseInt(userId) : undefined };
-                    authManager.isAuthenticated = true;
-                    authManager.isDeveloperMode = isDev;
-                    authManager.setupAuthHeaders();
-                    
-                    // If onboarding was completed, also set household ID
-                    if (onboardingCompleted && window.financialApp) {
-                        const householdId = localStorage.getItem('onboardingHouseholdId');
-                        if (householdId) {
-                            window.financialApp.currentHouseholdId = parseInt(householdId);
-                        }
+                authManager.authToken = token;
+                authManager.currentUser = { email: email, userId: userId ? parseInt(userId) : undefined };
+                authManager.isAuthenticated = true;
+                authManager.isDeveloperMode = isDev;
+                authManager.setupAuthHeaders();
+                
+                console.log('[EARLY RESTORE] Auth restored - isAuthenticated:', authManager.isAuthenticated, 'currentUser:', authManager.currentUser);
+                
+                // If onboarding was completed, also set household ID
+                if (onboardingCompleted && window.financialApp) {
+                    const householdId = localStorage.getItem('onboardingHouseholdId');
+                    if (householdId) {
+                        window.financialApp.currentHouseholdId = parseInt(householdId);
+                        console.log('[EARLY RESTORE] Household ID set from onboarding:', window.financialApp.currentHouseholdId);
                     }
                 }
+                
                 return true;
             } catch (error) {
-                console.error('Error restoring auth from storage:', error);
+                console.error('[EARLY RESTORE] Error restoring auth from storage:', error);
                 return false;
             }
         }
         
-        // Restore auth IMMEDIATELY (synchronously) after scripts load
-        // This must happen before main.js's DOMContentLoaded fires
-        restoreAuthFromStorage();
+        // Try to restore auth immediately after scripts load
+        // Use a small delay to ensure all scripts are initialized
+        setTimeout(function() {
+            const authRestoredEarly = restoreAuthFromStorage();
+            console.log('[EARLY RESTORE] Early auth restoration result:', authRestoredEarly);
+            
+            // Update navigation visibility if auth was restored
+            if (authRestoredEarly && window.uiManager && typeof window.uiManager.updateNavigationVisibility === 'function') {
+                uiManager.updateNavigationVisibility();
+            }
+        }, 10);
     </script>
     
     <script src="./scripts/main.js"></script>
@@ -653,26 +695,99 @@
 
         // Dashboard-specific initialization
         document.addEventListener('DOMContentLoaded', function() {
-            // Update profile button with user email
-            if (window.uiManager && typeof window.uiManager.updateProfileButton === 'function') {
-                uiManager.updateProfileButton();
-            }
+            console.log('[DASHBOARD INIT] Starting dashboard initialization');
             
-            // Check if user just completed onboarding FIRST
+            // CRITICAL: Check if user just completed onboarding FIRST (before any auth check)
+            // Save this value BEFORE we clear it, so we can use it for redirect logic
             const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
             const onboardingHouseholdId = localStorage.getItem('onboardingHouseholdId');
             let authWasRestoredFromOnboarding = false;
             
+            console.log('[DASHBOARD INIT] onboardingCompleted:', onboardingCompleted);
+            
             if (onboardingCompleted) {
-                console.log('Onboarding just completed - setting up auth state');
+                console.log('[DASHBOARD INIT] Onboarding just completed - setting up auth state');
                 
                 // Restore auth from what we have
                 const email = localStorage.getItem('userEmail');
                 const token = localStorage.getItem('authToken');
                 const userId = localStorage.getItem('userId');
                 
+                console.log('[DASHBOARD INIT] Onboarding auth data - email:', email, 'token:', token ? 'Present' : 'Missing', 'userId:', userId);
+                
                 if (email && token && window.authManager) {
-                    // Force auth state
+                    // Force auth state - CRITICAL: This must happen
+                    authManager.authToken = token;
+                    authManager.currentUser = { email: email, userId: userId ? parseInt(userId) : undefined };
+                    authManager.isAuthenticated = true;
+                    authManager.isDeveloperMode = false;
+                    authManager.setupAuthHeaders();
+                    
+                    // Set household ID if we have it
+                    if (onboardingHouseholdId && window.financialApp) {
+                        window.financialApp.currentHouseholdId = parseInt(onboardingHouseholdId);
+                        console.log('[DASHBOARD INIT] Household ID set from onboarding:', window.financialApp.currentHouseholdId);
+                    }
+                    
+                    authWasRestoredFromOnboarding = true;
+                    console.log('[DASHBOARD INIT] Auth state restored from onboarding - isAuthenticated:', authManager.isAuthenticated);
+                    
+                    // Show welcome message
+                    if (window.uiManager) {
+                        uiManager.showSuccessAlert('Welcome! Your financial profile has been created and your initial budget has been generated.');
+                        // Update profile button with the new user's email
+                        uiManager.updateProfileButton();
+                        // Update navigation visibility
+                        uiManager.updateNavigationVisibility();
+                    }
+                    
+                    // Clear the flags AFTER we've used them (but keep auth data)
+                    localStorage.removeItem('onboardingCompleted');
+                    localStorage.removeItem('onboardingHouseholdId');
+                    
+                    // Clear the redirect flags if they exist
+                    window.onboardingRedirectInProgress = false;
+                    window.onboardingJustCompleted = false;
+                } else {
+                    console.error('[DASHBOARD INIT] CRITICAL: Onboarding completed but missing auth data!', { 
+                        email: !!email, 
+                        token: !!token, 
+                        authManager: !!window.authManager 
+                    });
+                    // Even if auth data is missing, don't redirect if onboarding was completed
+                    // This is a critical error but we should still try to stay on dashboard
+                }
+            }
+            
+            // If auth was restored from onboarding, skip the normal auth check
+            // Otherwise, try to restore auth from storage (in case early restore failed)
+            let authRestored = false;
+            if (!authWasRestoredFromOnboarding) {
+                console.log('[DASHBOARD INIT] Attempting normal auth restoration');
+                authRestored = restoreAuthFromStorage();
+                console.log('[DASHBOARD INIT] Normal auth restoration result:', authRestored);
+            } else {
+                // Auth was already restored from onboarding, so consider it restored
+                authRestored = true;
+                console.log('[DASHBOARD INIT] Skipping normal auth restoration - already restored from onboarding');
+            }
+            
+            // Update profile button again after auth restoration (in case it wasn't updated above)
+            if (window.uiManager && typeof window.uiManager.updateProfileButton === 'function') {
+                uiManager.updateProfileButton();
+            }
+            
+            // CRITICAL: If onboarding was just completed, NEVER redirect - stay on dashboard
+            // Force auth restoration and prevent any redirects
+            if (onboardingCompleted || window.onboardingJustCompleted) {
+                console.log('[DASHBOARD INIT] Onboarding was completed - forcing auth restoration and staying on dashboard');
+                
+                // Force auth restoration
+                const token = localStorage.getItem('authToken');
+                const email = localStorage.getItem('userEmail');
+                const userId = localStorage.getItem('userId');
+                
+                if (token && email && window.authManager) {
                     authManager.authToken = token;
                     authManager.currentUser = { email: email, userId: userId ? parseInt(userId) : undefined };
                     authManager.isAuthenticated = true;
@@ -684,36 +799,70 @@
                         window.financialApp.currentHouseholdId = parseInt(onboardingHouseholdId);
                     }
                     
+                    authRestored = true;
                     authWasRestoredFromOnboarding = true;
-                    console.log('Auth state restored from onboarding completion');
+                    
+                    console.log('[DASHBOARD INIT] Auth restored successfully - user will stay on dashboard');
+                    
+                    // Update UI to show navigation - do this immediately
+                    if (window.uiManager) {
+                        uiManager.updateProfileButton();
+                        uiManager.updateNavigationVisibility();
+                    }
+                    
+                    // Also manually show navigation items as a backup
+                    const protectedNavItems = [
+                        'nav-item-dashboard',
+                        'nav-item-budget',
+                        'nav-item-modules',
+                        'nav-item-account',
+                        'nav-item-profile',
+                        'nav-item-logout'
+                    ];
+                    protectedNavItems.forEach(itemId => {
+                        const item = document.getElementById(itemId);
+                        if (item) {
+                            item.style.display = '';
+                            console.log('[DASHBOARD INIT] Manually showing nav item:', itemId);
+                        }
+                    });
                 }
                 
-                // Show welcome message
-                if (window.uiManager) {
-                    uiManager.showSuccessAlert('Welcome! Your financial profile has been created and your initial budget has been generated.');
-                    // Update profile button with the new user's email
-                    uiManager.updateProfileButton();
-                }
-                
-                // Clear the flags
-                localStorage.removeItem('onboardingCompleted');
-                localStorage.removeItem('onboardingHouseholdId');
-            }
-            
-            // Auth was already restored before main.js loaded, but verify it's still there
-            const authRestored = restoreAuthFromStorage();
-            
-            // Update profile button again after auth restoration (in case it wasn't updated above)
-            if (window.uiManager && typeof window.uiManager.updateProfileButton === 'function') {
-                uiManager.updateProfileButton();
-            }
-            
-            // Only redirect to login if auth wasn't restored AND onboarding wasn't just completed
-            if (!authRestored && !authWasRestoredFromOnboarding) {
-                console.warn('No authentication found, redirecting to login');
+                // Mark auth as restored to prevent redirect
+                authRestored = true;
+            } else if (!authRestored && !authWasRestoredFromOnboarding) {
+                // Only redirect if onboarding was NOT completed and auth couldn't be restored
+                console.warn('[DASHBOARD INIT] No authentication found and onboarding not completed, redirecting to login');
                 window.location.replace('index.html');
                 return;
             }
+            
+            // If we got here, user is authenticated (either from onboarding or from storage)
+            console.log('[DASHBOARD INIT] User authenticated, proceeding with dashboard load');
+            console.log('[DASHBOARD INIT] Auth status - restored:', authRestored, 'fromOnboarding:', authWasRestoredFromOnboarding, 'onboardingCompleted:', onboardingCompleted);
+            
+            // CRITICAL: Ensure navigation is visible - update again just to be sure
+            if (window.uiManager) {
+                uiManager.updateProfileButton();
+                uiManager.updateNavigationVisibility();
+            }
+            
+            // Also manually ensure all navigation items are visible
+            const allNavItems = [
+                'nav-item-dashboard',
+                'nav-item-budget',
+                'nav-item-modules',
+                'nav-item-account',
+                'nav-item-profile',
+                'nav-item-logout'
+            ];
+            allNavItems.forEach(itemId => {
+                const item = document.getElementById(itemId);
+                if (item) {
+                    item.style.display = '';
+                }
+            });
+            console.log('[DASHBOARD INIT] All navigation items should now be visible');
             
             // Prevent main.js from running app.init() on this page
             // We handle initialization ourselves
@@ -733,6 +882,9 @@
                 // Load reference data first, then dashboard data
                 window.financialApp.loadReferenceData().then(() => {
                     window.financialApp.loadDashboardData();
+                }).catch(error => {
+                    console.error('[DASHBOARD INIT] Error loading data:', error);
+                    // Even if data loading fails, user should still see navigation
                 });
             } else {
                 // Create new app instance
@@ -741,6 +893,9 @@
                 // Load reference data first, then dashboard data
                 app.loadReferenceData().then(() => {
                     app.loadDashboardData();
+                }).catch(error => {
+                    console.error('[DASHBOARD INIT] Error loading data:', error);
+                    // Even if data loading fails, user should still see navigation
                 });
             }
         });

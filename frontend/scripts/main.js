@@ -51,11 +51,24 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error('financialApp.init is not a function');
         }
 
+        // CRITICAL: Check if onboarding was just completed BEFORE calling init
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        if (onboardingCompleted || window.onboardingJustCompleted) {
+            console.log('[MAIN.JS] Onboarding just completed - skipping app.init() and redirecting to dashboard');
+            window.location.replace('dashboard.html');
+            return;
+        }
+        
         financialApp.init();
         
         // Update profile button with user email after initialization
         if (window.uiManager && typeof window.uiManager.updateProfileButton === 'function') {
             uiManager.updateProfileButton();
+        }
+        
+        // Update navigation visibility based on auth status
+        if (window.uiManager && typeof window.uiManager.updateNavigationVisibility === 'function') {
+            uiManager.updateNavigationVisibility();
         }
         
         console.log('=== Financial Literacy App initialized successfully ===');

@@ -13,8 +13,22 @@ class UIManager {
     }
 
     showLogin() {
+        // CRITICAL: Don't show login if onboarding redirect is in progress
+        if (window.onboardingRedirectInProgress) {
+            console.log('Onboarding redirect in progress - skipping showLogin()');
+            return;
+        }
+        
+        // CRITICAL: Don't show login if onboarding was just completed
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        if (onboardingCompleted) {
+            console.log('Onboarding just completed - skipping showLogin()');
+            return;
+        }
+        
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
+        const publicInfoSection = document.getElementById('public-info-section');
 
         // Only show login if we're on the index page (where these elements exist)
         if (!loginSection || !mainContent) {
@@ -24,6 +38,20 @@ class UIManager {
 
         loginSection.style.display = 'block';
         mainContent.classList.add('d-none');
+        
+        // Show public info section when not logged in
+        if (publicInfoSection) {
+            publicInfoSection.style.display = 'block';
+        }
+
+        // Reset profile button to show "Profile" instead of user email
+        const profileText = document.getElementById('profile-text');
+        if (profileText) {
+            profileText.textContent = 'Profile';
+        }
+
+        // Hide navigation items when not logged in
+        this.updateNavigationVisibility();
 
         // Set up login event listeners
         this.setupLoginEventListeners();
@@ -98,8 +126,18 @@ class UIManager {
         // Update profile button with user email
         this.updateProfileButton();
 
+        // Show navigation items when logged in
+        this.updateNavigationVisibility();
+
         // Set up navigation event listeners
         this.setupNavigation();
+        
+        // CRITICAL: Ensure event listeners for onboarding form are set up
+        // This ensures add income/debt buttons work when onboarding section is shown
+        if (window.financialApp && typeof window.financialApp.setupEventListeners === 'function') {
+            console.log('[UIMANAGER] Setting up event listeners for onboarding form');
+            window.financialApp.setupEventListeners();
+        }
     }
 
     populateUserEmail() {
@@ -146,6 +184,71 @@ class UIManager {
                 profileText.textContent = 'Profile';
             }
         }
+    }
+
+    updateNavigationVisibility() {
+        // Check if user is logged in - check multiple sources
+        let isLoggedIn = false;
+        
+        // Check authManager first
+        if (authManager) {
+            if (authManager.isLoggedIn && typeof authManager.isLoggedIn === 'function') {
+                isLoggedIn = authManager.isLoggedIn();
+            } else if (authManager.isAuthenticated) {
+                isLoggedIn = true;
+            }
+        }
+        
+        // Also check localStorage as backup
+        if (!isLoggedIn) {
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            if (token && email) {
+                isLoggedIn = true;
+                // Try to restore auth state if not already set
+                if (authManager && !authManager.isAuthenticated) {
+                    authManager.authToken = token;
+                    authManager.currentUser = { email: email, userId: localStorage.getItem('userId') ? parseInt(localStorage.getItem('userId')) : undefined };
+                    authManager.isAuthenticated = true;
+                    authManager.setupAuthHeaders();
+                }
+            }
+        }
+        
+        // Check for onboarding completion - if completed, user should be logged in
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        if (onboardingCompleted && !isLoggedIn) {
+            const token = localStorage.getItem('authToken');
+            const email = localStorage.getItem('userEmail');
+            if (token && email) {
+                isLoggedIn = true;
+            }
+        }
+        
+        console.log('[updateNavigationVisibility] isLoggedIn:', isLoggedIn, 'onboardingCompleted:', onboardingCompleted);
+        
+        // Navigation items to hide/show based on auth status
+        const protectedNavItems = [
+            'nav-item-dashboard',
+            'nav-item-budget',
+            'nav-item-modules',
+            'nav-item-account',
+            'nav-item-profile',
+            'nav-item-logout'
+        ];
+        
+        protectedNavItems.forEach(itemId => {
+            const item = document.getElementById(itemId);
+            if (item) {
+                if (isLoggedIn || onboardingCompleted) {
+                    item.style.display = '';
+                    console.log('[updateNavigationVisibility] Showing nav item:', itemId);
+                } else {
+                    item.style.display = 'none';
+                    console.log('[updateNavigationVisibility] Hiding nav item:', itemId);
+                }
+            }
+        });
     }
 
     showSection(sectionName) {
@@ -279,6 +382,9 @@ class UIManager {
             profileText.textContent = 'Profile';
         }
         
+        // Hide navigation items when logged out
+        this.updateNavigationVisibility();
+        
         const loginSection = document.getElementById('login-section');
         const mainContent = document.getElementById('main-content');
         
@@ -313,6 +419,16 @@ class UIManager {
 
     // Check if user is authenticated and redirect if not
     requireAuth() {
+        // CRITICAL: Check for onboarding completion FIRST - if onboarding was just completed,
+        // we should NOT redirect, even if auth restoration hasn't happened yet
+        const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+        
+        // Also check the immediate flag set by dashboard.html
+        if (window.onboardingJustCompleted) {
+            console.log('[requireAuth] Onboarding just completed - preventing redirect');
+            return true;
+        }
+        
         // Try to restore auth from localStorage first
         if (authManager && !authManager.isAuthenticated) {
             const token = localStorage.getItem('authToken');
@@ -328,8 +444,11 @@ class UIManager {
         }
         
         // Check if user is now authenticated
-        if (!authManager || !authManager.isAuthenticated || !authManager.isLoggedIn || !authManager.isLoggedIn()) {
-            // Not authenticated, redirect to index.html
+        // If onboarding was just completed, don't redirect - let the dashboard handle it
+        const isAuthenticated = authManager && authManager.isAuthenticated && (!authManager.isLoggedIn || authManager.isLoggedIn());
+        
+        if (!isAuthenticated && !onboardingCompleted && !window.onboardingJustCompleted) {
+            // Not authenticated and onboarding wasn't just completed, redirect to index.html
             window.location.replace('index.html');
             return false;
         }

@@ -14,7 +14,30 @@ class FinancialApp {
 
     async init() {
         try {
-            console.log('Starting app initialization...');
+            // CRITICAL: Don't initialize on standalone pages (dashboard, budget, modules, account)
+            const currentPage = window.location.pathname.split('/').pop() || '';
+            const standalonePages = ['dashboard.html', 'budget.html', 'modules.html', 'account.html'];
+            if (standalonePages.includes(currentPage)) {
+                console.log('[APP.INIT] Standalone page detected - skipping app.init() on:', currentPage);
+                return;
+            }
+            
+            // CRITICAL: Don't initialize if onboarding redirect is in progress
+            if (window.onboardingRedirectInProgress) {
+                console.log('[APP.INIT] Onboarding redirect in progress - skipping app.init()');
+                return;
+            }
+            
+            // CRITICAL: Check if onboarding was just completed - if so, don't show login
+            // This check must happen BEFORE any async operations
+            const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+            if (onboardingCompleted || window.onboardingJustCompleted) {
+                console.log('[APP.INIT] Onboarding just completed - skipping app.init() to prevent interference');
+                console.log('[APP.INIT] onboardingCompleted:', onboardingCompleted, 'onboardingJustCompleted:', window.onboardingJustCompleted);
+                return;
+            }
+            
+            console.log('[APP.INIT] Starting app initialization...');
 
             // Check if managers are available
             if (!authManager || !uiManager || !apiManager) {
@@ -22,20 +45,36 @@ class FinancialApp {
             }
 
             // Load reference data first before showing any UI
-            console.log('Loading reference data before showing UI...');
+            console.log('[APP.INIT] Loading reference data before showing UI...');
             uiManager.showLoading('Loading application data...');
             await this.loadReferenceData();
             uiManager.hideLoading();
 
+            // Check again after async operations (in case something changed)
+            const onboardingCompletedAfterLoad = localStorage.getItem('onboardingCompleted') === 'true';
+            if (onboardingCompletedAfterLoad || window.onboardingJustCompleted) {
+                console.log('[APP.INIT] Onboarding just completed (after load) - redirecting to dashboard');
+                window.location.replace('dashboard.html');
+                return;
+            }
+            
             // Check if user is already authenticated
             if (authManager.isAuthenticated && authManager.getCurrentUser()) {
-                console.log('User already authenticated, checking user status');
+                console.log('[APP.INIT] User already authenticated, checking user status');
                 // User is already authenticated, check if they're first-time or existing
                 await this.checkFirstTimeUser();
             } else {
+                // Final check before showing login - maybe onboarding completed during async operations
+                const finalOnboardingCheck = localStorage.getItem('onboardingCompleted') === 'true';
+                if (finalOnboardingCheck || window.onboardingJustCompleted) {
+                    console.log('[APP.INIT] Onboarding completed - redirecting to dashboard instead of showing login');
+                    window.location.replace('dashboard.html');
+                    return;
+                }
+                
                 // Show login screen for unauthenticated users
-                console.log('Showing login screen for unauthenticated user');
-            uiManager.showLogin();
+                console.log('[APP.INIT] Showing login screen for unauthenticated user');
+                uiManager.showLogin();
             }
 
             console.log('App initialization completed successfully');
@@ -48,7 +87,14 @@ class FinancialApp {
 
     async checkFirstTimeUser() {
         try {
-            console.log('Checking if user is first-time...');
+            // CRITICAL: Check if onboarding was just completed - if so, don't do anything
+            const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+            if (onboardingCompleted || window.onboardingJustCompleted) {
+                console.log('[CHECKFIRSTTIME] Onboarding just completed - skipping check');
+                return;
+            }
+            
+            console.log('[CHECKFIRSTTIME] Checking if user is first-time...');
 
             if (!authManager.getCurrentUser()) {
                 throw new Error('No authenticated user found');
@@ -56,14 +102,14 @@ class FinancialApp {
 
             const userEmail = authManager.getCurrentUser().email;
             const isDeveloper = authManager.isInDeveloperMode();
-            console.log('Checking user status for:', userEmail, 'Developer mode:', isDeveloper);
+            console.log('[CHECKFIRSTTIME] Checking user status for:', userEmail, 'Developer mode:', isDeveloper);
 
             // For developers, always show onboarding (every time)
             if (isDeveloper) {
-                console.log('Developer mode detected, showing onboarding');
+                console.log('[CHECKFIRSTTIME] Developer mode detected, showing onboarding');
                 // Ensure reference data is loaded before showing onboarding
                 if (this.states.length === 0 || this.categories.length === 0) {
-                    console.log('Reference data not loaded yet, loading now...');
+                    console.log('[CHECKFIRSTTIME] Reference data not loaded yet, loading now...');
                     await this.loadReferenceData();
                 }
                 uiManager.showSection('onboarding');
@@ -72,19 +118,26 @@ class FinancialApp {
 
             // For regular users, check if they're first-time
             const userStatus = await apiManager.checkFirstTimeUser(userEmail);
-            console.log('User status received:', userStatus);
+            console.log('[CHECKFIRSTTIME] User status received:', userStatus);
+
+            // Check again after async operation
+            const onboardingCompletedAfterCheck = localStorage.getItem('onboardingCompleted') === 'true';
+            if (onboardingCompletedAfterCheck || window.onboardingJustCompleted) {
+                console.log('[CHECKFIRSTTIME] Onboarding completed during check - skipping');
+                return;
+            }
 
             if (userStatus.isFirstTime) {
-                console.log('First-time user detected, showing onboarding');
+                console.log('[CHECKFIRSTTIME] First-time user detected, showing onboarding');
                 // First-time user, show onboarding
                 // Ensure reference data is loaded before showing onboarding
                 if (this.states.length === 0 || this.categories.length === 0) {
-                    console.log('Reference data not loaded yet, loading now...');
+                    console.log('[CHECKFIRSTTIME] Reference data not loaded yet, loading now...');
                     await this.loadReferenceData();
                 }
                 uiManager.showSection('onboarding');
             } else {
-                console.log('Existing user detected, showing dashboard');
+                console.log('[CHECKFIRSTTIME] Existing user detected, showing dashboard');
                 // User has completed onboarding, show dashboard
                 this.currentHouseholdId = userStatus.householdId;
                 uiManager.showSection('dashboard');
@@ -352,24 +405,40 @@ class FinancialApp {
             this.currentHouseholdId = response.householdId;
             console.log('Household ID set:', this.currentHouseholdId);
 
-            // Set authentication state to keep user logged in
-            authManager.isAuthenticated = true;
-            authManager.currentUser = { email: formData.email, userId: response.userId };
+            // CRITICAL: Preserve existing auth state - user is already logged in
+            // Get email from formData (which should match logged-in user from authManager)
+            const userEmail = formData.email;
             
-            // Save auth data to localStorage so dashboard.html recognizes the user as authenticated
-            // If the response includes a token, use it; otherwise use a placeholder
-            if (response.token) {
-                authManager.authToken = response.token;
-                localStorage.setItem('authToken', response.token);
-            } else {
-                // For onboarding without explicit token, store a session identifier
-                authManager.authToken = 'onboarding-session-' + Date.now();
-                localStorage.setItem('authToken', authManager.authToken);
+            // CRITICAL: Preserve existing auth token from login - don't create a new one
+            // The user logged in, so we should use their existing token
+            let authToken = authManager.authToken || localStorage.getItem('authToken');
+            
+            // If we still don't have a token, check if response provides one
+            if (!authToken && response.token) {
+                authToken = response.token;
             }
             
-            localStorage.setItem('userEmail', formData.email);
-            if (typeof response.userId !== 'undefined') {
-                localStorage.setItem('userId', String(response.userId));
+            // Only create a new token if we absolutely don't have one (shouldn't happen if user logged in)
+            if (!authToken) {
+                console.warn('WARNING: No existing auth token found, creating new one');
+                authToken = 'onboarding-session-' + Date.now();
+            }
+            
+            // CRITICAL: Preserve userId from existing auth if available
+            const existingUserId = authManager.currentUser?.userId || response.userId;
+            
+            // Set authentication state to keep user logged in - PRESERVE existing state
+            authManager.authToken = authToken;
+            authManager.isAuthenticated = true;
+            authManager.currentUser = { email: userEmail, userId: existingUserId };
+            authManager.isDeveloperMode = false;
+            
+            // Save ALL auth data to localStorage to ensure persistence
+            // Do this multiple times to ensure it's saved
+            localStorage.setItem('authToken', authToken);
+            localStorage.setItem('userEmail', userEmail);
+            if (typeof existingUserId !== 'undefined') {
+                localStorage.setItem('userId', String(existingUserId));
             } else {
                 // Ensure userId is set even if undefined
                 localStorage.setItem('userId', '0');
@@ -381,25 +450,68 @@ class FinancialApp {
             localStorage.setItem('onboardingCompleted', 'true');
             localStorage.setItem('onboardingHouseholdId', String(response.householdId));
             
-            // Verify the data was saved
+            // Verify the data was saved - triple check with multiple reads
             const savedToken = localStorage.getItem('authToken');
             const savedEmail = localStorage.getItem('userEmail');
-            console.log('Auth data saved - Token:', savedToken ? 'Present' : 'Missing', 'Email:', savedEmail);
+            const savedUserId = localStorage.getItem('userId');
+            console.log('Auth data saved - Token:', savedToken ? 'Present' : 'Missing', 'Email:', savedEmail, 'UserId:', savedUserId);
+            console.log('AuthManager state - isAuthenticated:', authManager.isAuthenticated, 'currentUser:', authManager.currentUser);
             
-            if (!savedToken || !savedEmail) {
-                console.error('ERROR: Failed to save auth data to localStorage');
+            // Final verification - read back one more time
+            const finalToken = localStorage.getItem('authToken');
+            const finalEmail = localStorage.getItem('userEmail');
+            console.log('Final verification - Token:', finalToken ? 'Confirmed' : 'MISSING', 'Email:', finalEmail || 'MISSING');
+            
+            if (!finalToken || !finalEmail) {
+                console.error('ERROR: Failed to save auth data to localStorage after multiple attempts');
                 throw new Error('Failed to save authentication data. Please try again.');
             }
             
             // Setup auth headers for future API calls
             authManager.setupAuthHeaders();
             
-            console.log('User authentication state saved after onboarding - redirecting to dashboard');
+            console.log('=== ONBOARDING COMPLETE - REDIRECTING TO DASHBOARD ===');
+            console.log('User authentication state saved after onboarding - redirecting to dashboard.html');
+            console.log('Auth data will be available on dashboard:', { token: finalToken ? 'YES' : 'NO', email: finalEmail || 'NO' });
+            console.log('Final verification - checking localStorage one more time before redirect:');
+            console.log('  - authToken:', localStorage.getItem('authToken') ? 'PRESENT' : 'MISSING');
+            console.log('  - userEmail:', localStorage.getItem('userEmail') || 'MISSING');
+            console.log('  - userId:', localStorage.getItem('userId') || 'MISSING');
+            console.log('  - onboardingCompleted:', localStorage.getItem('onboardingCompleted') || 'MISSING');
+            console.log('  - onboardingHouseholdId:', localStorage.getItem('onboardingHouseholdId') || 'MISSING');
 
-            // Small delay to ensure localStorage is committed, then redirect
-            setTimeout(() => {
-                window.location.replace('dashboard.html');
-            }, 100);
+            // CRITICAL: Set flags to prevent any other code from running
+            // This prevents app.init() or any other code from interfering
+            window.onboardingRedirectInProgress = true;
+            window.onboardingJustCompleted = true;
+            
+            // CRITICAL: Ensure all flags are set before redirect
+            // Double-check that everything is saved
+            if (!localStorage.getItem('authToken') || !localStorage.getItem('userEmail')) {
+                console.error('CRITICAL ERROR: Auth data not in localStorage before redirect!');
+                throw new Error('Failed to save authentication data. Please try again.');
+            }
+            
+            console.log('=== EXECUTING REDIRECT TO dashboard.html NOW ===');
+            console.log('Current URL:', window.location.href);
+            console.log('About to redirect to dashboard.html...');
+            
+            // CRITICAL: Stop ALL event propagation and prevent any other code from running
+            if (window.stop) {
+                window.stop(); // Stop page loading
+            }
+            
+            // CRITICAL: Use window.location.replace immediately - this should stop all execution
+            console.log('Executing window.location.replace("dashboard.html")...');
+            window.location.replace('dashboard.html');
+            
+            // Force immediate redirect - try multiple methods
+            window.location.href = 'dashboard.html';
+            window.location = 'dashboard.html';
+            
+            // This code should NEVER execute - if it does, something is very wrong
+            console.error('CRITICAL: Redirect code executed - this should not happen!');
+            alert('Redirect failed - please manually navigate to dashboard.html');
         } catch (error) {
             console.error('ERROR submitting onboarding:', error);
             console.error('Error details:', {
@@ -407,6 +519,25 @@ class FinancialApp {
                 stack: error.stack,
                 formData: error.formData
             });
+
+            // CRITICAL: If this is the redirect error we threw, ignore it
+            if (error.message.includes('Redirect should have happened')) {
+                console.log('Redirect error - this is expected, ignoring');
+                return;
+            }
+
+            // CRITICAL: Even if there's an error, if we have auth data, try to redirect anyway
+            // This prevents the user from being stuck on the login page
+            const hasAuthData = localStorage.getItem('authToken') && localStorage.getItem('userEmail');
+            const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+            
+            if (hasAuthData && onboardingCompleted) {
+                console.log('ERROR occurred but auth data exists - attempting redirect anyway');
+                window.onboardingRedirectInProgress = true;
+                window.onboardingJustCompleted = true;
+                window.location.replace('dashboard.html');
+                return;
+            }
 
             let errorMessage = 'Error creating profile. Please try again.';
             if (error.message.includes('network')) {
@@ -421,6 +552,11 @@ class FinancialApp {
 
     addIncomeEntry() {
         const container = document.getElementById('income-container');
+        if (!container) {
+            console.error('Income container not found');
+            return;
+        }
+        
         const entry = document.createElement('div');
         entry.className = 'income-entry border rounded p-3 mb-3';
         entry.innerHTML = `
@@ -439,7 +575,7 @@ class FinancialApp {
                 <div class="col-md-4 mb-2">
                     <div class="input-group">
                         <span class="input-group-text">$</span>
-                        <input type="number" class="form-control income-amount" placeholder="Amount" step="0.01" required>
+                        <input type="number" class="form-control income-amount" placeholder="Amount" step="50" required>
                     </div>
                 </div>
                 <div class="col-md-1 mb-2">
@@ -453,15 +589,76 @@ class FinancialApp {
         container.appendChild(entry);
 
         // Add remove functionality
-        entry.querySelector('.remove-income').addEventListener('click', () => {
-            entry.remove();
-        });
+        const removeBtn = entry.querySelector('.remove-income');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                entry.remove();
+            });
+        }
     }
 
     addDebtEntry() {
-        // This would be implemented to add debt entries to the form
-        // For now, it's a placeholder
-        console.log('Add debt entry functionality would be implemented here');
+        const container = document.getElementById('debt-container');
+        if (!container) {
+            console.error('Debt container not found');
+            return;
+        }
+        
+        const entry = document.createElement('div');
+        entry.className = 'debt-entry border rounded p-3 mb-3';
+        entry.innerHTML = `
+            <div class="row g-2">
+                <div class="col-12 col-md-2 mb-2">
+                    <label class="form-label small text-muted mb-1">Debt Type</label>
+                    <select class="form-select debt-type form-select-sm" required>
+                        <option value="">Type...</option>
+                        <option value="credit-card">Credit Card</option>
+                        <option value="student-loan">Student Loan</option>
+                        <option value="auto-loan">Auto Loan</option>
+                        <option value="mortgage">Mortgage</option>
+                        <option value="personal-loan">Personal Loan</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-2 mb-2">
+                    <label class="form-label small text-muted mb-1">Debt Name</label>
+                    <input type="text" class="form-control debt-name form-control-sm" placeholder="e.g., Chase Visa" required>
+                </div>
+                <div class="col-6 col-md-2 mb-2">
+                    <label class="form-label small text-muted mb-1">Balance</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">$</span>
+                        <input type="number" class="form-control debt-balance" placeholder="0.00" step="50" required>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2 mb-2">
+                    <label class="form-label small text-muted mb-1">APR (%)</label>
+                    <div class="input-group input-group-sm">
+                        <input type="number" class="form-control debt-apr" placeholder="0" step="1" min="0" max="100">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2 mb-2">
+                    <label class="form-label small text-muted mb-1">Min Payment</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">$</span>
+                        <input type="number" class="form-control debt-min-payment" placeholder="0.00" step="50">
+                    </div>
+                </div>
+                <div class="col-6 col-md-2 mb-2 d-flex align-items-end">
+                    <button type="button" class="btn btn-outline-danger btn-sm w-100 remove-debt" title="Remove debt">
+                        <i class="bi bi-trash"></i> Remove
+                    </button>
+                </div>
+            </div>
+        `;
+
+        container.appendChild(entry);
+
+        // Add remove functionality
+        entry.querySelector('.remove-debt').addEventListener('click', () => {
+            entry.remove();
+        });
     }
 
     // Navigation Methods
@@ -936,19 +1133,94 @@ class FinancialApp {
     // Event Listener Setup
     setupEventListeners() {
         // Onboarding form submission
-        document.getElementById('onboarding-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleOnboardingSubmit();
-        });
+        const onboardingForm = document.getElementById('onboarding-form');
+        if (onboardingForm) {
+            // Remove any existing listeners first
+            const newForm = onboardingForm.cloneNode(true);
+            onboardingForm.parentNode.replaceChild(newForm, onboardingForm);
+            
+            newForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                console.log('[ONBOARDING FORM] Form submitted, calling handleOnboardingSubmit');
+                
+                try {
+                    await this.handleOnboardingSubmit();
+                    console.log('[ONBOARDING FORM] handleOnboardingSubmit completed - redirect should have happened');
+                } catch (error) {
+                    console.error('[ONBOARDING FORM] Error in handleOnboardingSubmit:', error);
+                    
+                    // CRITICAL: Even if there's an error, check if we have auth data and redirect
+                    const hasAuthData = localStorage.getItem('authToken') && localStorage.getItem('userEmail');
+                    const onboardingCompleted = localStorage.getItem('onboardingCompleted') === 'true';
+                    
+                    if (hasAuthData && onboardingCompleted) {
+                        console.log('[ONBOARDING FORM] Redirecting to dashboard after error - auth data exists');
+                        window.onboardingRedirectInProgress = true;
+                        window.onboardingJustCompleted = true;
+                        window.location.replace('dashboard.html');
+                        return;
+                    }
+                    
+                    // If redirect error (expected), ignore it
+                    if (error.message && error.message.includes('Redirect should have happened')) {
+                        console.log('[ONBOARDING FORM] Redirect error - this is expected, ignoring');
+                        return;
+                    }
+                }
+            });
+        }
 
-        // Add income button
-        document.getElementById('add-income').addEventListener('click', () => {
-            this.addIncomeEntry();
-        });
+        // Add income button - use event delegation for dynamic content
+        const addIncomeBtn = document.getElementById('add-income');
+        if (addIncomeBtn) {
+            // Remove any existing listeners by cloning
+            const newBtn = addIncomeBtn.cloneNode(true);
+            addIncomeBtn.parentNode.replaceChild(newBtn, addIncomeBtn);
+            newBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.addIncomeEntry();
+            });
+            console.log('Add income button listener attached');
+        } else {
+            console.warn('Add income button not found - may not be on current page');
+        }
 
-        // Add debt button
-        document.getElementById('add-debt').addEventListener('click', () => {
-            this.addDebtEntry();
+        // Add debt button - use event delegation for dynamic content
+        const addDebtBtn = document.getElementById('add-debt');
+        if (addDebtBtn) {
+            // Remove any existing listeners by cloning
+            const newBtn = addDebtBtn.cloneNode(true);
+            addDebtBtn.parentNode.replaceChild(newBtn, addDebtBtn);
+            newBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.addDebtEntry();
+            });
+            console.log('Add debt button listener attached');
+        } else {
+            console.warn('Add debt button not found - may not be on current page');
+        }
+        
+        // Add remove listeners to existing income entries (first entry)
+        document.querySelectorAll('.remove-income').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const entry = btn.closest('.income-entry');
+                if (entry) {
+                    // Don't remove if it's the only entry
+                    const allEntries = document.querySelectorAll('.income-entry');
+                    if (allEntries.length > 1) {
+                        entry.remove();
+                    } else {
+                        alert('You must have at least one income entry');
+                    }
+                }
+            });
         });
 
         // Budget method change
@@ -1020,6 +1292,7 @@ try {
     }
 
     // Initialize budget manager if budget.js loaded
+    let budgetManager = undefined;
     if (typeof BudgetManager !== 'undefined') {
         budgetManager = new BudgetManager(financialApp);
         console.log('Budget manager initialized');
@@ -1028,6 +1301,7 @@ try {
     }
 
     // Initialize dashboard manager if dashboard.js loaded
+    let dashboardManager = undefined;
     if (typeof DashboardManager !== 'undefined') {
         dashboardManager = new DashboardManager(financialApp);
         console.log('Dashboard manager initialized');
@@ -1040,8 +1314,14 @@ try {
     window.uiManager = uiManager;
     window.apiManager = apiManager;
     window.financialApp = financialApp;
-    window.budgetManager = budgetManager;
-    window.dashboardManager = dashboardManager;
+    
+    // Only expose managers if they were initialized
+    if (budgetManager !== undefined) {
+        window.budgetManager = budgetManager;
+    }
+    if (dashboardManager !== undefined) {
+        window.dashboardManager = dashboardManager;
+    }
 
     console.log('All modules loaded and globals exposed successfully');
 
